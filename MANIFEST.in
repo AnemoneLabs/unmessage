@@ -1,0 +1,4 @@
+include COPYING
+include README.rst
+include unmessage/_version.py
+include versioneer.py
