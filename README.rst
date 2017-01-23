@@ -32,10 +32,10 @@ Quick Start
 Install the following requirements via package manager::
 
     # If using Debian/Ubuntu
-    $ sudo apt-get install build-essential libffi-dev python-dev tor tkinter
+    $ sudo apt-get install build-essential gcc libffi-dev python-dev tor tkinter
 
     # If using Fedora
-    $ sudo yum install libffi-devel python-devel redhat-rpm-config tor tkinter
+    $ sudo yum install gcc libffi-devel python-devel redhat-rpm-config tor tkinter
 
 
 If you use `pip`_ and `setuptools`_ (probably installed automatically
