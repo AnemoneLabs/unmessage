@@ -68,14 +68,14 @@ with `Matrix`_, **#anemone** at `OFTC`_, or use the
 `GitHub issue tracker`_ to leave suggestions, bug reports, complaints
 or anything you feel will contribute to this application.
 
-.. _`cli`: https://unmessage.readthedocs.io
+.. _`cli`: https://unmessage.readthedocs.io/en/latest/cli/cli.html
 .. _`cryptully`: https://github.com/shanet/Cryptully
 .. _`curses`: https://docs.python.org/2/library/curses.html
 .. _`double ratchet algorithm`: https://whispersystems.org/docs/specifications/doubleratchet
 .. _`documentation`: https://unmessage.readthedocs.io
-.. _`github issue tracker`: https://github.com/AnemoneLabs/unmessage
-.. _`gui`: https://unmessage.readthedocs.io
-.. _`installation`: https://unmessage.readthedocs.io
+.. _`github issue tracker`: https://github.com/AnemoneLabs/unmessage/issues
+.. _`gui`: https://unmessage.readthedocs.io/en/latest/gui/gui.html
+.. _`installation`: https://unmessage.readthedocs.io/en/latest/installation.html
 .. _`matrix`: https://matrix.org
 .. _`oftc`: https://oftc.net
 .. _`pip`: https://pypi.python.org/pypi/pip
@@ -87,4 +87,4 @@ or anything you feel will contribute to this application.
 .. _`tor onion services`: https://www.torproject.org/docs/hidden-services.html
 .. _`twisted`: https://twistedmatrix.com
 .. _`txtorcon`: https://github.com/meejah/txtorcon
-.. _`unmessage protocol`: https://unmessage.readthedocs.io
+.. _`unmessage protocol`: https://unmessage.readthedocs.io/en/latest/protocol.html
