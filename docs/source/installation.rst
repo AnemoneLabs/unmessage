@@ -4,7 +4,7 @@ Installation
 Make sure that you have the following::
 
     # If using Debian/Ubuntu
-    $ sudo apt-get install build-essential gcc libffi-dev python-dev tor tkinter
+    $ sudo apt-get install build-essential gcc libffi-dev python-dev tor python-tk
 
     # If using Fedora
     $ sudo yum install gcc libffi-devel python-devel redhat-rpm-config tor tkinter
