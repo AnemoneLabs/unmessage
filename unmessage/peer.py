@@ -788,6 +788,13 @@ class Peer(object):
             use_tor_proxy = False
             start_onion_server = False
             self._local_mode = local_mode
+        self._ui.notify_bootstrap(
+            notifications.UnmessageNotification('Starting peer'))
+
+        self._create_peer_dir()
+        self._load_peer_info()
+        self._update_config()
+
         if local_server_port:
             self._port_local_server = int(local_server_port)
         self._use_tor_proxy = use_tor_proxy
@@ -795,13 +802,6 @@ class Peer(object):
             self._port_tor = int(tor_port)
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
-
-        self._ui.notify_bootstrap(
-            notifications.UnmessageNotification('Starting peer'))
-
-        self._create_peer_dir()
-        self._load_peer_info()
-        self._update_config()
 
         def peer_started(result):
             self._ui.notify_bootstrap(
