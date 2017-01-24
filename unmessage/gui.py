@@ -67,7 +67,7 @@ class Gui(Tk.Tk, PeerUi):
                                   command=self.copy_peer)
         self.menu_bar.add_command(label='Copy Onion', state=Tk.DISABLED,
                                   command=self.copy_onion)
-        self.menu_bar.add_command(label='Quit', command=lambda: self.quit())
+        self.menu_bar.add_command(label='Quit', command=self.quit)
         self.config(menu=self.menu_bar)
 
         if name:
@@ -298,12 +298,12 @@ class ChatTab(Tk.Frame, ConversationUi, object):
 
         button_verify = Tk.Button(frame_tab,
                                   text='Verify',
-                                  command=lambda: self.verify())
+                                  command=self.verify)
         button_verify.grid(row=buttons_row, pady=(10, 0))
 
         button_authenticate = Tk.Button(frame_tab,
                                         text='Authenticate',
-                                        command=lambda: self.authenticate())
+                                        command=self.authenticate)
         button_authenticate.grid(row=buttons_row, pady=(10, 0), sticky=Tk.E)
 
         self.text_message.bind('<Return>',
@@ -521,7 +521,7 @@ class RequestWindow(Tk.Toplevel, object):
             self.entry_name.pack()
 
         button_create = Tk.Button(frame, text=button_text,
-                                  command=lambda: self.send_or_accept())
+                                  command=self.send_or_accept)
         button_create.pack(pady=(10, 0))
 
         self.bind('<Return>',
