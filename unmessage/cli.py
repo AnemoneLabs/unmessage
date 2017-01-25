@@ -873,7 +873,7 @@ def main(name=None):
     parser.add_argument('-n', '--name',
                         default=name)
     parser.add_argument('-l', '--local-server-port',
-                        default=peer.PORT,
+                        default=None,
                         type=int)
     parser.add_argument('--no-tor-process',
                         action='store_false')

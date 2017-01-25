@@ -108,7 +108,7 @@ class Peer(object):
         if not name:
             raise errors.InvalidNameError()
 
-        self._info = PeerInfo()
+        self._info = PeerInfo(port_local_server=PORT)
         self._name = name
         self._persistence = Persistence(dbname=self._path_peer_db,
                                         dbpassphrase=None)
@@ -118,7 +118,6 @@ class Peer(object):
         self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
 
-        self._port_local_server = PORT
         self._port_tor = TOR_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
@@ -191,6 +190,14 @@ class Peer(object):
             else:
                 raise
         return Address(onion_server, self._port_local_server)
+
+    @property
+    def port_local_server(self):
+        return self._info.port_local_server
+
+    @port_local_server.setter
+    def _port_local_server(self, port_local_server):
+        self._info.port_local_server = port_local_server
 
     @property
     def identity(self):
@@ -1262,8 +1269,10 @@ class ElementParser:
 
 
 class PeerInfo:
-    def __init__(self, name=None, identity_keys=None, contacts=None):
+    def __init__(self, name=None, port_local_server=None, identity_keys=None,
+                 contacts=None):
         self.name = name
+        self.port_local_server = port_local_server
         self.identity_keys = identity_keys
         self.contacts = contacts or dict()
 
@@ -1295,6 +1304,7 @@ class Persistence:
             CREATE TABLE IF NOT EXISTS
                 peer (
                     name TEXT,
+                    port_local_server INTEGER,
                     priv_identity_key TEXT,
                     pub_identity_key TEXT)''')
         db.execute('''
@@ -1333,9 +1343,11 @@ class Persistence:
         if row:
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
+            port_local_server = int(row['port_local_server'])
             name = str(row['name'])
         else:
             identity_keys = None
+            port_local_server = None
             name = None
 
         with self.db as db:
@@ -1352,7 +1364,7 @@ class Persistence:
                         bool(row['has_presence']))
             contacts[c.name] = c
 
-        return PeerInfo(name, identity_keys, contacts)
+        return PeerInfo(name, port_local_server, identity_keys, contacts)
 
     def save_peer_info(self, peer_info):
         with self.db as db:
@@ -1364,13 +1376,14 @@ class Persistence:
                     INSERT INTO
                         peer (
                             name,
+                            port_local_server,
                             priv_identity_key,
                             pub_identity_key)
-                    VALUES (?, ?, ?)''', (
+                    VALUES (?, ?, ?, ?)''', (
                         peer_info.name,
+                        peer_info.port_local_server,
                         b2a(peer_info.identity_keys.priv),
                         b2a(peer_info.identity_keys.pub)))
-
             db.execute('''
                 DELETE FROM
                     contacts''')
