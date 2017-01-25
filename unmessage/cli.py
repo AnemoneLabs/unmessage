@@ -193,7 +193,7 @@ class Cli(PeerUi):
 
     def start(self, name,
               local_server_port=None,
-              start_tor_process=True,
+              start_tor_socks=True,
               use_tor_proxy=True,
               tor_port=None,
               start_onion_server=True,
@@ -210,7 +210,7 @@ class Cli(PeerUi):
             curses.wrapper(self.start_main,
                            name,
                            local_server_port,
-                           start_tor_process,
+                           start_tor_socks,
                            use_tor_proxy,
                            tor_port,
                            start_onion_server,
@@ -227,7 +227,7 @@ class Cli(PeerUi):
 
     def init_peer(self, name,
                   local_server_port,
-                  start_tor_process,
+                  start_tor_socks,
                   use_tor_proxy,
                   tor_port,
                   start_onion_server,
@@ -235,7 +235,7 @@ class Cli(PeerUi):
                   local_mode):
         self.peer = Peer(name, self)
         self.peer.start(local_server_port,
-                        start_tor_process,
+                        start_tor_socks,
                         use_tor_proxy,
                         tor_port,
                         start_onion_server,
@@ -382,7 +382,7 @@ class Cli(PeerUi):
     def start_main(self, stdscr,
                    name,
                    local_server_port,
-                   start_tor_process,
+                   start_tor_socks,
                    use_tor_proxy,
                    tor_port,
                    start_onion_server,
@@ -396,7 +396,7 @@ class Cli(PeerUi):
         try:
             self.init_peer(name,
                            local_server_port,
-                           start_tor_process,
+                           start_tor_socks,
                            use_tor_proxy,
                            tor_port,
                            start_onion_server,
@@ -873,9 +873,9 @@ def main(name=None):
     parser.add_argument('-n', '--name',
                         default=name)
     parser.add_argument('-l', '--local-server-port',
-                        default=peer.PORT,
+                        default=None,
                         type=int)
-    parser.add_argument('--no-tor-process',
+    parser.add_argument('--no-tor-socks',
                         action='store_false')
     parser.add_argument('--no-tor-proxy',
                         action='store_false')
@@ -897,7 +897,7 @@ def main(name=None):
     cli = Cli()
     cli.start(args.name,
               args.local_server_port,
-              args.no_tor_process,
+              args.no_tor_socks,
               args.no_tor_proxy,
               args.tor_port,
               args.no_onion_service,

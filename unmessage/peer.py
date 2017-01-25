@@ -108,7 +108,7 @@ class Peer(object):
         if not name:
             raise errors.InvalidNameError()
 
-        self._info = PeerInfo()
+        self._info = PeerInfo(port_local_server=PORT)
         self._name = name
         self._persistence = Persistence(dbname=self._path_peer_db,
                                         dbpassphrase=None)
@@ -118,7 +118,6 @@ class Peer(object):
         self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
 
-        self._port_local_server = PORT
         self._port_tor = TOR_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
@@ -191,6 +190,14 @@ class Peer(object):
             else:
                 raise
         return Address(onion_server, self._port_local_server)
+
+    @property
+    def port_local_server(self):
+        return self._info.port_local_server
+
+    @port_local_server.setter
+    def _port_local_server(self, port_local_server):
+        self._info.port_local_server = port_local_server
 
     @property
     def identity(self):
@@ -287,7 +294,7 @@ class Peer(object):
         if self._use_tor_proxy:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
-                                      socks_port=self._tor_config.SocksPort)
+                                      socks_port=self._port_tor)
         else:
             if self._local_mode:
                 host = HOST
@@ -563,7 +570,7 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
-    def _start_server(self, start_tor_process, start_onion_server):
+    def _start_server(self, start_tor_socks, start_onion_server):
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Configuring local server'))
 
@@ -578,7 +585,7 @@ class Peer(object):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Running local server'))
 
-            d_tor = self._config_tor(start_tor_process, start_onion_server)
+            d_tor = self._config_tor(start_tor_socks, start_onion_server)
             if d_tor:
                 d_tor.addCallbacks(d.callback, d.errback)
             else:
@@ -601,8 +608,8 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, start_tor_process, start_onion_server):
-        if start_tor_process or start_onion_server:
+    def _config_tor(self, start_tor_socks, start_onion_server):
+        if start_tor_socks or start_onion_server:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Configuring Tor'))
 
@@ -610,16 +617,16 @@ class Peer(object):
             config.DataDirectory = self._path_tor_data_dir
             config.ControlPort = self._port_tor_control
 
-            if start_tor_process:
+            if start_tor_socks:
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
-                        'Configuring Tor process'))
+                        'Configuring Tor SOCKS port'))
 
                 config.SocksPort = self._port_tor
             else:
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
-                        "Using the system's Tor process"))
+                        "Using the system's Tor SOCKS port"))
 
             if start_onion_server:
                 self._ui.notify_bootstrap(
@@ -655,7 +662,7 @@ class Peer(object):
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
-                    "Using the system's Tor process and Onion Service"))
+                    "Using the system's Tor SOCKS port and Onion Service"))
             return None
 
     def _send_request(self, identity, key):
@@ -777,17 +784,24 @@ class Peer(object):
                         'found'))
 
     def start(self, local_server_port=None,
-              start_tor_process=True,
+              start_tor_socks=True,
               use_tor_proxy=True,
               tor_port=None,
               start_onion_server=True,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
-            start_tor_process = False
+            start_tor_socks = False
             use_tor_proxy = False
             start_onion_server = False
             self._local_mode = local_mode
+        self._ui.notify_bootstrap(
+            notifications.UnmessageNotification('Starting peer'))
+
+        self._create_peer_dir()
+        self._load_peer_info()
+        self._update_config()
+
         if local_server_port:
             self._port_local_server = int(local_server_port)
         self._use_tor_proxy = use_tor_proxy
@@ -795,13 +809,6 @@ class Peer(object):
             self._port_tor = int(tor_port)
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
-
-        self._ui.notify_bootstrap(
-            notifications.UnmessageNotification('Starting peer'))
-
-        self._create_peer_dir()
-        self._load_peer_info()
-        self._update_config()
 
         def peer_started(result):
             self._ui.notify_bootstrap(
@@ -836,7 +843,7 @@ class Peer(object):
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
 
-        d = self._start_server(start_tor_process, start_onion_server)
+        d = self._start_server(start_tor_socks, start_onion_server)
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
@@ -1262,8 +1269,10 @@ class ElementParser:
 
 
 class PeerInfo:
-    def __init__(self, name=None, identity_keys=None, contacts=None):
+    def __init__(self, name=None, port_local_server=None, identity_keys=None,
+                 contacts=None):
         self.name = name
+        self.port_local_server = port_local_server
         self.identity_keys = identity_keys
         self.contacts = contacts or dict()
 
@@ -1295,6 +1304,7 @@ class Persistence:
             CREATE TABLE IF NOT EXISTS
                 peer (
                     name TEXT,
+                    port_local_server INTEGER,
                     priv_identity_key TEXT,
                     pub_identity_key TEXT)''')
         db.execute('''
@@ -1333,9 +1343,11 @@ class Persistence:
         if row:
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
+            port_local_server = int(row['port_local_server'])
             name = str(row['name'])
         else:
             identity_keys = None
+            port_local_server = None
             name = None
 
         with self.db as db:
@@ -1352,7 +1364,7 @@ class Persistence:
                         bool(row['has_presence']))
             contacts[c.name] = c
 
-        return PeerInfo(name, identity_keys, contacts)
+        return PeerInfo(name, port_local_server, identity_keys, contacts)
 
     def save_peer_info(self, peer_info):
         with self.db as db:
@@ -1364,13 +1376,14 @@ class Persistence:
                     INSERT INTO
                         peer (
                             name,
+                            port_local_server,
                             priv_identity_key,
                             pub_identity_key)
-                    VALUES (?, ?, ?)''', (
+                    VALUES (?, ?, ?, ?)''', (
                         peer_info.name,
+                        peer_info.port_local_server,
                         b2a(peer_info.identity_keys.priv),
                         b2a(peer_info.identity_keys.pub)))
-
             db.execute('''
                 DELETE FROM
                     contacts''')
