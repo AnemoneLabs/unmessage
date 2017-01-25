@@ -570,7 +570,7 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
-    def _start_server(self, start_tor_process, start_onion_server):
+    def _start_server(self, start_tor_socks, start_onion_server):
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Configuring local server'))
 
@@ -585,7 +585,7 @@ class Peer(object):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Running local server'))
 
-            d_tor = self._config_tor(start_tor_process, start_onion_server)
+            d_tor = self._config_tor(start_tor_socks, start_onion_server)
             if d_tor:
                 d_tor.addCallbacks(d.callback, d.errback)
             else:
@@ -608,8 +608,8 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, start_tor_process, start_onion_server):
-        if start_tor_process or start_onion_server:
+    def _config_tor(self, start_tor_socks, start_onion_server):
+        if start_tor_socks or start_onion_server:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Configuring Tor'))
 
@@ -617,16 +617,16 @@ class Peer(object):
             config.DataDirectory = self._path_tor_data_dir
             config.ControlPort = self._port_tor_control
 
-            if start_tor_process:
+            if start_tor_socks:
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
-                        'Configuring Tor process'))
+                        'Configuring Tor SOCKS port'))
 
                 config.SocksPort = self._port_tor
             else:
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
-                        "Using the system's Tor process"))
+                        "Using the system's Tor SOCKS port"))
 
             if start_onion_server:
                 self._ui.notify_bootstrap(
@@ -662,7 +662,7 @@ class Peer(object):
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
-                    "Using the system's Tor process and Onion Service"))
+                    "Using the system's Tor SOCKS port and Onion Service"))
             return None
 
     def _send_request(self, identity, key):
@@ -784,14 +784,14 @@ class Peer(object):
                         'found'))
 
     def start(self, local_server_port=None,
-              start_tor_process=True,
+              start_tor_socks=True,
               use_tor_proxy=True,
               tor_port=None,
               start_onion_server=True,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
-            start_tor_process = False
+            start_tor_socks = False
             use_tor_proxy = False
             start_onion_server = False
             self._local_mode = local_mode
@@ -843,7 +843,7 @@ class Peer(object):
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
 
-        d = self._start_server(start_tor_process, start_onion_server)
+        d = self._start_server(start_tor_socks, start_onion_server)
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
