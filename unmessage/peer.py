@@ -294,7 +294,7 @@ class Peer(object):
         if self._use_tor_proxy:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
-                                      socks_port=self._tor_config.SocksPort)
+                                      socks_port=self._port_tor)
         else:
             if self._local_mode:
                 host = HOST
