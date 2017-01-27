@@ -20,6 +20,15 @@ def raise_malformed(f):
 
 
 @raise_malformed
+def build_intro_packet(data):
+    lines = data.splitlines()
+    packet = IntroductionPacket(iv=lines[0],
+                                iv_hash=lines[1],
+                                data=data)
+    return packet
+
+
+@raise_malformed
 def build_regular_packet(data):
     return RegularPacket(*data.splitlines())
 
@@ -42,6 +51,16 @@ def build_element_packet(data):
                          part_num=lines[2],
                          part_len=lines[3],
                          payload=lines[4])
+
+
+class IntroductionPacket:
+    def __init__(self, iv, iv_hash, data):
+        self.iv = iv
+        self.iv_hash = iv_hash
+        self.data = data
+
+    def __str__(self):
+        return self.data
 
 
 class RegularPacket:

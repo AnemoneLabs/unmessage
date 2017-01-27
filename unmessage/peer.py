@@ -924,7 +924,7 @@ class Introduction(Thread):
             self.peer._ui.notify_error(e)
 
     def handle_introduction_data(self, data):
-        packet = packets.build_regular_packet(data)
+        packet = packets.build_intro_packet(data)
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
