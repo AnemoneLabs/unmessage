@@ -1068,7 +1068,7 @@ class Conversation(object):
         self.queue_in_packets.put([packet, self])
 
     def handle_out_req_data(self, data):
-        packet = packets.build_regular_packet(data)
+        packet = packets.build_reply_packet(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
 

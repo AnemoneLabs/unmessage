@@ -1,10 +1,16 @@
 from functools import wraps
 
+from pyaxo import a2b
+
 from . import elements
 from . import errors
 
 
 IV_LEN = 8
+KEY_LEN = 32
+ENC_KEY_LEN = 72
+HASH_LEN = 32
+
 LINESEP = '\n'
 
 
@@ -13,10 +19,20 @@ def raise_malformed(f):
     def try_building(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except (IndexError, TypeError):
+        except (AssertionError, IndexError, TypeError):
             packet_type = f.func_name.split('_')[1]
             raise errors.MalformedPacketError(packet_type)
     return try_building
+
+
+def check_iv(packet):
+    assert len(a2b(packet.iv)) == IV_LEN
+    assert len(a2b(packet.iv_hash)) == HASH_LEN
+
+
+def check_payload(packet):
+    assert len(a2b(packet.payload_hash)) == HASH_LEN
+    a2b(packet.payload)
 
 
 @raise_malformed
@@ -25,22 +41,52 @@ def build_intro_packet(data):
     packet = IntroductionPacket(iv=lines[0],
                                 iv_hash=lines[1],
                                 data=data)
+
+    check_iv(packet)
+
     return packet
 
 
 @raise_malformed
 def build_regular_packet(data):
-    return RegularPacket(*data.splitlines())
+    packet = RegularPacket(*data.splitlines())
+
+    check_payload(packet)
+    assert not len(a2b(packet.handshake_key))
+
+    return packet
+
+
+@raise_malformed
+def build_reply_packet(data):
+    packet = RegularPacket(*data.splitlines())
+
+    check_payload(packet)
+    assert len(a2b(packet.handshake_key)) == ENC_KEY_LEN
+
+    return packet
 
 
 @raise_malformed
 def build_request_packet(data):
-    return RequestPacket(*data.splitlines())
+    packet = RequestPacket(*data.splitlines())
+
+    assert len(a2b(packet.handshake_packet_hash)) == HASH_LEN
+    assert len(a2b(packet.request_key)) == KEY_LEN
+    a2b(packet.handshake_packet)
+
+    return packet
 
 
 @raise_malformed
 def build_handshake_packet(data):
-    return HandshakePacket(*data.splitlines())
+    packet = HandshakePacket(*data.splitlines())
+
+    assert len(a2b(packet.identity_key)) == KEY_LEN
+    assert len(a2b(packet.handshake_key)) == KEY_LEN
+    assert len(a2b(packet.ratchet_key)) == KEY_LEN
+
+    return packet
 
 
 @raise_malformed
