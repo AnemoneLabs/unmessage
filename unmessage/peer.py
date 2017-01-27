@@ -916,11 +916,6 @@ class Introduction(Thread):
         try:
             self.handle_introduction_data(data)
         except errors.MalformedPacketError as e:
-            indexed_lines = [
-                '[{}]: {}'.format(index, line)
-                for index, line in enumerate(data.splitlines())]
-            e.message = '\n'.join(['{}: {}'.format(e.title, e.message)] +
-                                  indexed_lines)
             self.peer._ui.notify_error(e)
 
     def handle_introduction_data(self, data):
@@ -1032,11 +1027,6 @@ class Conversation(object):
                 # TODO maybe disconnect instead of ignoring the data
                 pass
             except errors.MalformedPacketError as e:
-                indexed_lines = [
-                    '[{}]: {}'.format(index, line)
-                    for index, line in enumerate(data.splitlines())]
-                e.message = '\n'.join(['{}: {}'.format(e.title, e.message)] +
-                                      indexed_lines)
                 self.peer._ui.notify_error(e)
 
     def check_out_data(self):

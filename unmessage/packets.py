@@ -16,12 +16,16 @@ LINESEP = '\n'
 
 def raise_malformed(f):
     @wraps(f)
-    def try_building(*args, **kwargs):
+    def try_building(data):
         try:
-            return f(*args, **kwargs)
+            return f(data)
         except (AssertionError, IndexError, TypeError):
             packet_type = f.func_name.split('_')[1]
-            raise errors.MalformedPacketError(packet_type)
+            e = errors.MalformedPacketError(packet_type)
+            indexed_lines = ['[{}]: {}'.format(index, line)
+                             for index, line in enumerate(data.splitlines())]
+            e.message = LINESEP.join([e.message] + indexed_lines)
+            raise e
     return try_building
 
 
