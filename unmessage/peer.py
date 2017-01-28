@@ -909,7 +909,7 @@ class Introduction(Thread):
         self.peer = peer
         self.connection = connection
 
-        self.connection.manager = self
+        self.connection.add_manager(self)
 
     def run(self):
         data = self.queue_in_data.get()
