@@ -492,9 +492,9 @@ class Peer(object):
         """
         try:
             regular_packet = self._decrypt(packet, conversation)
-        except errors.CorruptedPacketError as e:
+        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+            e.title += ' caused by "{}"'.format(conversation.contact.name)
             self.peer.notify_error(e)
-            pass
         else:
             element = self._process_element_packet(
                 packet=regular_packet,
@@ -915,8 +915,10 @@ class Introduction(Thread):
         data = self.queue_in_data.get()
         try:
             self.handle_introduction_data(data)
-        except errors.MalformedPacketError as e:
+        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+            e.title += ' caused by an unknown peer'
             self.peer._ui.notify_error(e)
+            self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
         packet = packets.build_intro_packet(data)
@@ -938,24 +940,21 @@ class Introduction(Thread):
             # the database does not have a conversation between the
             # users, so a request must be created and the UI
             # notified
-            try:
-                req = self.peer._process_request(data)
-            except errors.CorruptedPacketError as e:
-                self.peer.notify_error(e)
-                pass
-            else:
-                conv = req.conversation
-                conv.start()
-                conv.set_active(self.connection, Conversation.state_in_req)
+            req = self.peer._process_request(data)
 
-                contact = req.conversation.contact
-                self.peer._inbound_requests[contact.identity] = req
-                self.peer._ui.notify_in_request(
-                    notifications.ContactNotification(
-                        contact,
-                        title='Request received',
-                        message='{} has sent you a '
-                                'request'.format(contact.name)))
+            conv = req.conversation
+            conv.start()
+            conv.set_active(self.connection, Conversation.state_in_req)
+
+            contact = req.conversation.contact
+            self.peer._inbound_requests[contact.identity] = req
+            self.peer._ui.notify_in_request(
+                notifications.ContactNotification(
+                    contact,
+                    title='Request received',
+                    message='{} has sent you a '
+                            'request'.format(contact.name)))
+
         self.peer._managers_conv.remove(self)
 
     def notify_disconnect(self):
@@ -1026,7 +1025,9 @@ class Conversation(object):
                 # be received from the other party
                 # TODO maybe disconnect instead of ignoring the data
                 pass
-            except errors.MalformedPacketError as e:
+            except (errors.MalformedPacketError,
+                    errors.CorruptedPacketError) as e:
+                e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
 
     def check_out_data(self):
