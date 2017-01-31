@@ -14,6 +14,7 @@ import pyperclip
 import txsocksx.errors
 import txtorcon
 from nacl.utils import random
+from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, Keypair, a2b, b2a
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
@@ -355,9 +356,15 @@ class Peer(object):
         hs_packet_hash = keyed_hash(request_keys.payload_hash_key, hs_packet)
 
         if hs_packet_hash == a2b(req_packet.handshake_packet_hash):
-            dec_hs_packet = pyaxo.decrypt_symmetric(
-                request_keys.handshake_enc_key,
-                hs_packet)
+            try:
+                dec_hs_packet = pyaxo.decrypt_symmetric(
+                    request_keys.handshake_enc_key,
+                    hs_packet)
+            except CryptoError:
+                e = errors.MalformedPacketError('request')
+                e.message += ' - decryption failed'
+                raise e
+
             req_packet.handshake_packet = packets.build_handshake_packet(
                 dec_hs_packet)
 
@@ -1071,9 +1078,15 @@ class Conversation(object):
             # the regular packet provides a handshake key, making it possible
             # to do a Triple Diffie-Hellman handshake and create an Axolotl
             # state
-            handshake_key = pyaxo.decrypt_symmetric(
-                req.conversation.request_keys.handshake_enc_key,
-                enc_handshake_key)
+            try:
+                handshake_key = pyaxo.decrypt_symmetric(
+                    req.conversation.request_keys.handshake_enc_key,
+                    enc_handshake_key)
+            except CryptoError:
+                e = errors.MalformedPacketError('reply')
+                e.message += ' - decryption failed'
+                raise e
+
             self.peer._init_conv(
                 self,
                 priv_handshake_key=req.handshake_keys.priv,
