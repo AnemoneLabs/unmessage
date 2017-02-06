@@ -14,6 +14,7 @@ import pyperclip
 import txsocksx.errors
 import txtorcon
 from nacl.utils import random
+from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, Keypair, a2b, b2a
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
@@ -355,9 +356,15 @@ class Peer(object):
         hs_packet_hash = keyed_hash(request_keys.payload_hash_key, hs_packet)
 
         if hs_packet_hash == a2b(req_packet.handshake_packet_hash):
-            dec_hs_packet = pyaxo.decrypt_symmetric(
-                request_keys.handshake_enc_key,
-                hs_packet)
+            try:
+                dec_hs_packet = pyaxo.decrypt_symmetric(
+                    request_keys.handshake_enc_key,
+                    hs_packet)
+            except CryptoError:
+                e = errors.MalformedPacketError('request')
+                e.message += ' - decryption failed'
+                raise e
+
             req_packet.handshake_packet = packets.build_handshake_packet(
                 dec_hs_packet)
 
@@ -492,9 +499,9 @@ class Peer(object):
         """
         try:
             regular_packet = self._decrypt(packet, conversation)
-        except errors.CorruptedPacketError as e:
+        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+            e.title += ' caused by "{}"'.format(conversation.contact.name)
             self.peer.notify_error(e)
-            pass
         else:
             element = self._process_element_packet(
                 packet=regular_packet,
@@ -909,22 +916,19 @@ class Introduction(Thread):
         self.peer = peer
         self.connection = connection
 
-        self.connection.manager = self
+        self.connection.add_manager(self)
 
     def run(self):
         data = self.queue_in_data.get()
         try:
             self.handle_introduction_data(data)
-        except errors.MalformedPacketError as e:
-            indexed_lines = [
-                '[{}]: {}'.format(index, line)
-                for index, line in enumerate(data.splitlines())]
-            e.message = '\n'.join(['{}: {}'.format(e.title, e.message)] +
-                                  indexed_lines)
+        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+            e.title += ' caused by an unknown peer'
             self.peer._ui.notify_error(e)
+            self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
-        packet = packets.build_regular_packet(data)
+        packet = packets.build_intro_packet(data)
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
@@ -943,24 +947,21 @@ class Introduction(Thread):
             # the database does not have a conversation between the
             # users, so a request must be created and the UI
             # notified
-            try:
-                req = self.peer._process_request(data)
-            except errors.CorruptedPacketError as e:
-                self.peer.notify_error(e)
-                pass
-            else:
-                conv = req.conversation
-                conv.start()
-                conv.set_active(self.connection, Conversation.state_in_req)
+            req = self.peer._process_request(data)
 
-                contact = req.conversation.contact
-                self.peer._inbound_requests[contact.identity] = req
-                self.peer._ui.notify_in_request(
-                    notifications.ContactNotification(
-                        contact,
-                        title='Request received',
-                        message='{} has sent you a '
-                                'request'.format(contact.name)))
+            conv = req.conversation
+            conv.start()
+            conv.set_active(self.connection, Conversation.state_in_req)
+
+            contact = req.conversation.contact
+            self.peer._inbound_requests[contact.identity] = req
+            self.peer._ui.notify_in_request(
+                notifications.ContactNotification(
+                    contact,
+                    title='Request received',
+                    message='{} has sent you a '
+                            'request'.format(contact.name)))
+
         self.peer._managers_conv.remove(self)
 
     def notify_disconnect(self):
@@ -1031,12 +1032,9 @@ class Conversation(object):
                 # be received from the other party
                 # TODO maybe disconnect instead of ignoring the data
                 pass
-            except errors.MalformedPacketError as e:
-                indexed_lines = [
-                    '[{}]: {}'.format(index, line)
-                    for index, line in enumerate(data.splitlines())]
-                e.message = '\n'.join(['{}: {}'.format(e.title, e.message)] +
-                                      indexed_lines)
+            except (errors.MalformedPacketError,
+                    errors.CorruptedPacketError) as e:
+                e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
 
     def check_out_data(self):
@@ -1068,7 +1066,7 @@ class Conversation(object):
         self.queue_in_packets.put([packet, self])
 
     def handle_out_req_data(self, data):
-        packet = packets.build_regular_packet(data)
+        packet = packets.build_reply_packet(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
 
@@ -1080,9 +1078,15 @@ class Conversation(object):
             # the regular packet provides a handshake key, making it possible
             # to do a Triple Diffie-Hellman handshake and create an Axolotl
             # state
-            handshake_key = pyaxo.decrypt_symmetric(
-                req.conversation.request_keys.handshake_enc_key,
-                enc_handshake_key)
+            try:
+                handshake_key = pyaxo.decrypt_symmetric(
+                    req.conversation.request_keys.handshake_enc_key,
+                    enc_handshake_key)
+            except CryptoError:
+                e = errors.MalformedPacketError('reply')
+                e.message += ' - decryption failed'
+                raise e
+
             self.peer._init_conv(
                 self,
                 priv_handshake_key=req.handshake_keys.priv,
