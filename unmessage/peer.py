@@ -56,54 +56,6 @@ TOR_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
-class _ConversationFactory(Factory):
-    def __init__(self, peer, connection_made):
-        self.peer = peer
-        self.connection_made = connection_made
-
-    def buildProtocol(self, addr):
-        return _ConversationProtocol(self, self.connection_made)
-
-    def notify_error(self, error):
-        self.peer._ui.notify_error(error)
-
-
-class _ConversationProtocol(NetstringReceiver):
-    def __init__(self, factory, connection_made):
-        self.factory = factory
-        self.connection_made = connection_made
-        self.manager = None
-
-    def connectionMade(self):
-        self.connection_made(self)
-
-    def add_manager(self, manager):
-        self.manager = manager
-
-    def remove_manager(self):
-        self.manager = None
-        self.transport.loseConnection()
-
-    def connectionLost(self, reason):
-        if self.manager:
-            # the other party disconnected cleanly without sending a presence
-            # element or the connection was actually lost
-            # TODO check the different reasons and act accordingly?
-            # TODO consider a connection that never had a manager?
-            self.manager.notify_disconnect()
-
-    def stringReceived(self, string):
-        try:
-            self.manager.queue_in_data.put(string)
-        except AttributeError:
-            self.factory.notify_error(
-                errors.TransportError(
-                    message='Packet received without a manager'))
-
-    def send(self, string):
-        self.sendString(string)
-
-
 class Peer(object):
     def __init__(self, name, ui=None):
         if not name:
@@ -1270,6 +1222,54 @@ class ElementParser:
         else:
             # the ``Element`` has parts yet to be transmitted (sent/received)
             pass
+
+
+class _ConversationFactory(Factory):
+    def __init__(self, peer, connection_made):
+        self.peer = peer
+        self.connection_made = connection_made
+
+    def buildProtocol(self, addr):
+        return _ConversationProtocol(self, self.connection_made)
+
+    def notify_error(self, error):
+        self.peer._ui.notify_error(error)
+
+
+class _ConversationProtocol(NetstringReceiver):
+    def __init__(self, factory, connection_made):
+        self.factory = factory
+        self.connection_made = connection_made
+        self.manager = None
+
+    def connectionMade(self):
+        self.connection_made(self)
+
+    def add_manager(self, manager):
+        self.manager = manager
+
+    def remove_manager(self):
+        self.manager = None
+        self.transport.loseConnection()
+
+    def connectionLost(self, reason):
+        if self.manager:
+            # the other party disconnected cleanly without sending a presence
+            # element or the connection was actually lost
+            # TODO check the different reasons and act accordingly?
+            # TODO consider a connection that never had a manager?
+            self.manager.notify_disconnect()
+
+    def stringReceived(self, string):
+        try:
+            self.manager.queue_in_data.put(string)
+        except AttributeError:
+            self.factory.notify_error(
+                errors.TransportError(
+                    message='Packet received without a manager'))
+
+    def send(self, string):
+        self.sendString(string)
 
 
 class PeerInfo:
