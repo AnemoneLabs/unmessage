@@ -37,6 +37,12 @@ class AuthenticationElement:
     type_ = 'auth'
 
 
+REGULAR_ELEMENT_TYPES = [RequestElement.type_,
+                         PresenceElement.type_,
+                         MessageElement.type_,
+                         AuthenticationElement.type_]
+
+
 ID_LENGTH = 2
 
 
