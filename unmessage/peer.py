@@ -443,7 +443,7 @@ class Peer(object):
                           callback=connection_made,
                           errback=connection_failed)
 
-    def _receive_packet(self, packet, conversation):
+    def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
 
         Unwrap the element packet with decryption, process it and parse the
@@ -460,7 +460,7 @@ class Peer(object):
                 conversation=conversation,
                 sender=conversation.contact.name,
                 receiver=self.name)
-            self._element_parser.parse(element, conversation)
+            self._element_parser.parse(element, conversation, connection)
 
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
@@ -871,7 +871,7 @@ class Introduction(Thread):
         self.connection.add_manager(self)
 
     def run(self):
-        data = self.queue_in_data.get()
+        data, _ = self.queue_in_data.get()
         try:
             self.handle_introduction_data(data)
         except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
@@ -893,7 +893,7 @@ class Introduction(Thread):
                 # conversation, a manager must be started and then
                 # receive the packet using the existing conversation
                 conv.set_active(self.connection, Conversation.state_conv)
-                conv.queue_in_data.put(data)
+                conv.queue_in_data.put([data, self.connection])
                 break
         else:
             # the database does not have a conversation between the
@@ -983,10 +983,10 @@ class Conversation(object):
 
     def check_in_data(self):
         while True:
-            data = self.queue_in_data.get()
+            data, connection = self.queue_in_data.get()
             try:
                 method = getattr(self, 'handle_{}_data'.format(self.state))
-                method(data)
+                method(data, connection)
             except AttributeError:
                 # the state does not have a "handle" method, which currently is
                 # state_in_req because it should be waiting for the request to
@@ -1023,11 +1023,11 @@ class Conversation(object):
     def send_data(self, data, callback, errback):
         self.queue_out_data.put([data, callback, errback])
 
-    def handle_conv_data(self, data):
+    def handle_conv_data(self, data, connection):
         packet = packets.build_regular_packet(data)
-        self.queue_in_packets.put([packet, self])
+        self.queue_in_packets.put([packet, connection, self])
 
-    def handle_out_req_data(self, data):
+    def handle_out_req_data(self, data, connection):
         packet = packets.build_reply_packet(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
@@ -1154,7 +1154,7 @@ class ElementParser:
     def __init__(self, peer):
         self.peer = peer
 
-    def _parse_pres_element(self, element, conversation):
+    def _parse_pres_element(self, element, conversation, connection=None):
         if str(element) == PresenceElement.status_online:
             conversation.ui.notify_online(
                 notifications.UnmessageNotification(
@@ -1172,11 +1172,11 @@ class ElementParser:
                     notifications.UnmessageNotification(
                         '{} is offline'.format(conversation.contact.name)))
 
-    def _parse_msg_element(self, element, conversation):
+    def _parse_msg_element(self, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
 
-    def _parse_auth_element(self, element, conversation):
+    def _parse_auth_element(self, element, conversation, connection=None):
         if element.sender == self.peer.name:
             if conversation.auth_session.is_waiting:
                 conversation.ui.notify_out_authentication(
@@ -1217,7 +1217,7 @@ class ElementParser:
                         message=message.format(
                             conversation.contact.name)))
 
-    def parse(self, element, conversation):
+    def parse(self, element, conversation, connection=None):
         if element.is_complete:
             # it can be parsed as all parts have been added to the ``Element``
             # or it is composed of a single part
@@ -1228,7 +1228,7 @@ class ElementParser:
                 # TODO handle elements with unknown types
                 pass
             else:
-                method(element, conversation)
+                method(element, conversation, connection)
         else:
             # the ``Element`` has parts yet to be transmitted (sent/received)
             pass
@@ -1272,7 +1272,7 @@ class _ConversationProtocol(NetstringReceiver):
 
     def stringReceived(self, string):
         try:
-            self.manager.queue_in_data.put(string)
+            self.manager.queue_in_data.put([string, self])
         except AttributeError:
             self.factory.notify_error(
                 errors.TransportError(
