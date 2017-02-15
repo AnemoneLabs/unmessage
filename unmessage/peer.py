@@ -937,7 +937,7 @@ class Conversation(object):
         self.axolotl = axolotl
         self.auth_session = None
 
-        self.managers = dict()
+        self._managers = dict()
         self.connection = connection
         self.queue_in_data = Queue()
         self.queue_out_data = Queue()
@@ -974,12 +974,12 @@ class Conversation(object):
 
     def _get_manager(self, type_):
         try:
-            return self.managers[type_]
+            return self._managers[type_]
         except KeyError:
             return None
 
     def _set_manager(self, manager, type_):
-        self.managers[type_] = manager
+        self._managers[type_] = manager
 
     def check_in_data(self):
         while True:
