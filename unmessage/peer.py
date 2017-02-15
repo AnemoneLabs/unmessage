@@ -1247,16 +1247,20 @@ class _ConversationFactory(Factory):
 
 
 class _ConversationProtocol(NetstringReceiver):
+    type_regular = 'reg'
+
     def __init__(self, factory, connection_made):
         self.factory = factory
         self.connection_made = connection_made
         self.manager = None
+        self.type_ = None
 
     def connectionMade(self):
         self.connection_made(self)
 
-    def add_manager(self, manager):
+    def add_manager(self, manager, type_=None):
         self.manager = manager
+        self.type_ = type_ or _ConversationProtocol.type_regular
 
     def remove_manager(self):
         self.manager = None
@@ -1272,7 +1276,12 @@ class _ConversationProtocol(NetstringReceiver):
 
     def stringReceived(self, string):
         try:
-            self.manager.queue_in_data.put([string, self])
+            if self.type_ == _ConversationProtocol.type_regular:
+                self.manager.queue_in_data.put([string, self])
+            else:
+                self.factory.notify_error(errors.UnmessageError(
+                    title='Connection of unknown type',
+                    message=str(self.type_)))
         except AttributeError:
             self.factory.notify_error(
                 errors.TransportError(
