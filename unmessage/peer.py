@@ -981,6 +981,10 @@ class Conversation(object):
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
 
+    def remove_manager(self, manager):
+        manager.stop()
+        del self._managers[manager.type_]
+
     def check_in_data(self):
         while True:
             data, connection = self.queue_in_data.get()
