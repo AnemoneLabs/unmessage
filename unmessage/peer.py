@@ -1068,7 +1068,15 @@ class Conversation(object):
         self.state = state
         self.is_active = True
 
+    def add_connection(self, connection, type_):
+        manager = self._get_manager(type_)
+        manager.connection = connection
+        connection.add_manager(manager, type_)
+        return manager
+
     def close(self):
+        for m in self._managers.values():
+            self.remove_manager(m)
         if self.connection:
             self.connection.remove_manager()
             self.connection = None
