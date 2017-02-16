@@ -892,7 +892,8 @@ class Introduction(Thread):
                 # users, so the current connection must be added to the
                 # conversation, a manager must be started and then
                 # receive the packet using the existing conversation
-                conv.set_active(self.connection, Conversation.state_conv)
+                if not conv.is_active:
+                    conv.set_active(self.connection, Conversation.state_conv)
                 conv.queue_in_data.put([data, self.connection])
                 break
         else:
