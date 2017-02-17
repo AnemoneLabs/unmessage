@@ -420,28 +420,45 @@ class Peer(object):
                               callback=element_sent,
                               errback=element_not_sent)
 
+        def connection_failed(failure):
+            if packet.type_ != PresenceElement.type_:
+                if failure.check(txsocksx.errors.HostUnreachable,
+                                 txsocksx.errors.TTLExpired):
+                    conversation.ui.notify_offline(
+                        errors.HostUnreachableError())
+                else:
+                    conversation.ui.notify_error(errors.UnmessageError(
+                        title='Conversation connection failed',
+                        message=str(failure)))
+
+        def connect(connection_made):
+            self._connect(conversation.contact.address,
+                          callback=connection_made,
+                          errback=connection_failed)
+
         if conversation.is_active:
-            send_with_manager(conversation)
+            if packet.type_ in elements.REGULAR_ELEMENT_TYPES:
+                send_with_manager(conversation)
+            else:
+                manager = conversation._get_manager(packet.type_)
+                if not manager.connection:
+                    def connection_made(connection):
+                        manager = conversation.add_connection(connection,
+                                                              packet.type_)
+                        send_with_manager(manager)
+
+                    # the peer makes another connection to the other one to send
+                    # this "special" element
+                    connect(connection_made)
+                else:
+                    send_with_manager(manager)
         else:
             def connection_made(connection):
                 conversation.set_active(connection, Conversation.state_conv)
                 send_with_manager(conversation)
 
-            def connection_failed(failure):
-                if packet.type_ != PresenceElement.type_:
-                    if failure.check(txsocksx.errors.HostUnreachable,
-                                     txsocksx.errors.TTLExpired):
-                        conversation.ui.notify_offline(
-                            errors.HostUnreachableError())
-                    else:
-                        conversation.ui.notify_error(errors.UnmessageError(
-                            title='Conversation connection failed',
-                            message=str(failure)))
-
             # the peer connects to the other one to resume a conversation
-            self._connect(conversation.contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
+            connect(connection_made)
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
