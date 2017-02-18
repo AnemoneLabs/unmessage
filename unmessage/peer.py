@@ -30,7 +30,7 @@ from . import notifications
 from . import packets
 from . import requests
 from .contact import Contact
-from .elements import RequestElement, PresenceElement
+from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
 from .utils import Address
@@ -1277,6 +1277,7 @@ class _ConversationFactory(Factory):
 
 class _ConversationProtocol(NetstringReceiver):
     type_regular = 'reg'
+    type_untalk = elements.UntalkElement.type_
 
     def __init__(self, factory, connection_made):
         self.factory = factory
@@ -1307,6 +1308,8 @@ class _ConversationProtocol(NetstringReceiver):
         try:
             if self.type_ == _ConversationProtocol.type_regular:
                 self.manager.queue_in_data.put([string, self])
+            elif self.type_ == _ConversationProtocol.type_untalk:
+                self.manager.receive_data(string)
             else:
                 self.factory.notify_error(errors.UnmessageError(
                     title='Connection of unknown type',
