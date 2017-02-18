@@ -23,6 +23,10 @@ class RequestElement:
     request_accepted = 'accepted'
 
 
+class UntalkElement:
+    type_ = 'untalk'
+
+
 class PresenceElement:
     type_ = 'pres'
     status_online = 'online'
