@@ -1102,13 +1102,12 @@ class Conversation(object):
         self.is_active = False
 
     def notify_disconnect(self):
-        self.connection = None
-        self.auth_session = None
         if self.is_active:
             self.ui.notify_disconnect(
                 notifications.UnmessageNotification(
                     '{} has disconnected'.format(self.contact.name)))
-            self.is_active = False
+        self.connection = None
+        self.close()
 
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
