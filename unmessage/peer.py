@@ -1222,6 +1222,30 @@ class ElementParser:
     def __init__(self, peer):
         self.peer = peer
 
+    def _parse_untalk_element(self, element, conversation, connection=None):
+        message = None
+        if conversation.untalk_session:
+            if element.sender == self.peer.name:
+                if (conversation.untalk_session.state ==
+                        UntalkSession.state_sent):
+                    message = 'voice conversation request sent to {}'
+                else:
+                    # this peer has accepted the request
+                    conversation.start_untalk()
+            elif conversation.untalk_session.state == UntalkSession.state_sent:
+                # the other peer has accepted the request
+                conversation.start_untalk(
+                    other_handshake_key=a2b(str(element)))
+        elif element.receiver == self.peer.name:
+                message = '{} wishes to start a voice conversation'
+                conversation.init_untalk(connection,
+                                         other_handshake_key=a2b(str(element)))
+
+        if message:
+            conversation.ui.notify(
+                notifications.UntalkNotification(
+                    message.format(conversation.contact.name)))
+
     def _parse_pres_element(self, element, conversation, connection=None):
         if str(element) == PresenceElement.status_online:
             conversation.ui.notify_online(
