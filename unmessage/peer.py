@@ -990,6 +990,14 @@ class Conversation(object):
             # the session has not been initialized
             return None
 
+    @property
+    def untalk_session(self):
+        return self._get_manager(elements.UntalkElement.type_)
+
+    @untalk_session.setter
+    def _untalk_session(self, manager):
+        self._set_manager(manager, elements.UntalkElement.type_)
+
     def _get_manager(self, type_):
         try:
             return self._managers[type_]
