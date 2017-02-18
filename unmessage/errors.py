@@ -5,6 +5,13 @@ class UnmessageError(Exception):
         self.message = message
 
 
+class UntalkError(UnmessageError):
+    def __init__(self, message, title=None):
+        super(UntalkError, self).__init__(
+            message,
+            title or 'unTalk error')
+
+
 class ConnectionLostError(UnmessageError):
     def __init__(self, contact):
         super(ConnectionLostError, self).__init__(
