@@ -447,8 +447,8 @@ class Peer(object):
                                                               packet.type_)
                         send_with_manager(manager)
 
-                    # the peer makes another connection to the other one to send
-                    # this "special" element
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
                     connect(connection_made)
                 else:
                     send_with_manager(manager)
