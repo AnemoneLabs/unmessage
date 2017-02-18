@@ -33,6 +33,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
+from .untalk import UntalkSession
 from .utils import Address
 from .smp import SMP
 
@@ -711,6 +712,17 @@ class Peer(object):
                            content=RequestElement.request_accepted,
                            handshake_key=handshake_keys.pub)
 
+    def _untalk(self, conversation, input_device=None, output_device=None):
+        untalk_session = (conversation.untalk_session or
+                          conversation.init_untalk())
+        if untalk_session.is_talking:
+            conversation.stop_untalk()
+        else:
+            untalk_session.configure(input_device, output_device)
+            self._send_element(conversation,
+                               UntalkElement.type_,
+                               content=b2a(untalk_session.handshake_keys.pub))
+
     def _send_message(self, conversation, plaintext):
         self._send_element(conversation,
                            MessageElement.type_,
@@ -861,6 +873,13 @@ class Peer(object):
         else:
             contact.is_verified = False
             raise errors.VerificationError(name)
+
+    def untalk(self, name, input_device=None, output_device=None):
+        t = Thread(target=self._untalk,
+                   args=(self.get_conversation(name),
+                         input_device, output_device,))
+        t.daemon = True
+        t.start()
 
     def send_message(self, name, plaintext):
         t = Thread(target=self._send_message,
@@ -1116,6 +1135,18 @@ class Conversation(object):
                     '{} has disconnected'.format(self.contact.name)))
         self.connection = None
         self.close()
+
+    def init_untalk(self, connection=None, other_handshake_key=None):
+        self._untalk_session = UntalkSession(self, other_handshake_key)
+        if connection:
+            self.add_connection(connection, elements.UntalkElement.type_)
+        return self.untalk_session
+
+    def start_untalk(self, other_handshake_key=None):
+        self.untalk_session.start(other_handshake_key)
+
+    def stop_untalk(self):
+        self.remove_manager(self.untalk_session)
 
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
