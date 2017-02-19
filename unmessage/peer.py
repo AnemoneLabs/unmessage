@@ -718,10 +718,16 @@ class Peer(object):
         if untalk_session.is_talking:
             conversation.stop_untalk()
         else:
-            untalk_session.configure(input_device, output_device)
-            self._send_element(conversation,
-                               UntalkElement.type_,
-                               content=b2a(untalk_session.handshake_keys.pub))
+            try:
+                untalk_session.configure(input_device, output_device)
+            except untalk.AudioDeviceNotFoundError as e:
+                conversation.remove_manager(untalk_session)
+                self._ui.notify_error(e)
+            else:
+                self._send_element(
+                    conversation,
+                    UntalkElement.type_,
+                    content=b2a(untalk_session.handshake_keys.pub))
 
     def _send_message(self, conversation, plaintext):
         self._send_element(conversation,

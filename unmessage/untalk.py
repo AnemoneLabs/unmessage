@@ -103,6 +103,14 @@ class UntalkSession(object):
         if decode_fec is not None:
             self.decode_fec = int(decode_fec)
 
+        device_indexes = get_audio_devices().keys()
+        if self.input_device not in device_indexes:
+            raise AudioDeviceNotFoundError(direction='input',
+                                           index=self.input_device)
+        if self.output_device not in device_indexes:
+            raise AudioDeviceNotFoundError(direction='output',
+                                           index=self.output_device)
+
         self.jitter_buffer = Queue()
         self.codec = OpusCodec(self)
 
@@ -301,6 +309,23 @@ class OpusCodec:
                                    frame_size=self.untalk.frame_size,
                                    decode_fec=self.untalk.decode_fec,
                                    channels=CHANNELS)
+
+
+class AudioDeviceNotFoundError(errors.UntalkError):
+    def __init__(self, direction, index):
+        super(AudioDeviceNotFoundError, self).__init__(
+            message='The {} device at index {} could not be '
+                    'found'.format(direction, index))
+
+
+def get_audio_devices():
+    devices = dict()
+    with suppress_alsa_errors():
+        audio = pyaudio.PyAudio()
+    for i in range(audio.get_device_count()):
+        d = audio.get_device_info_by_index(i)
+        devices[d['index']] = d['name']
+    return devices
 
 
 """
