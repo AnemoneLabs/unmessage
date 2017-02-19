@@ -54,7 +54,7 @@ COMMANDS = {
     '/reqs-out': ['display outbound requests',
                   ''],
     '/untalk': ['send or accept a request to talk with a peer using voice',
-                '<peer_name> [<input_device> <output_device>]'],
+                '<peer_name> [<input_device_index> <output_device_index>]'],
     '/untalk-devices': ['display audio devices available',
                         ''],
     '/verify': ["verify a peer's identity key",
