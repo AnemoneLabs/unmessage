@@ -33,11 +33,11 @@ Install the following requirements via package manager::
 
     # If using Debian/Ubuntu
     $ sudo apt-get install build-essential gcc libffi-dev libopus0 \
-      portaudio19-dev python-dev python-tk tor
+      libsodium-dev portaudio19-dev python-dev python-tk tor
 
     # If using Fedora
-    $ sudo yum install gcc libffi-devel opus portaudio-devel python-devel \
-      redhat-rpm-config tkinter tor
+    $ sudo yum install gcc libffi-devel libsodium-devel opus portaudio-devel \
+      python-devel redhat-rpm-config tkinter tor
 
 
 If you use `pip`_ and `setuptools`_ (probably installed automatically
