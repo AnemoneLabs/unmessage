@@ -29,11 +29,11 @@ from . import errors
 from . import notifications
 from . import packets
 from . import requests
+from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
-from .untalk import UntalkSession
 from .utils import Address
 from .smp import SMP
 
@@ -1137,7 +1137,7 @@ class Conversation(object):
         self.close()
 
     def init_untalk(self, connection=None, other_handshake_key=None):
-        self._untalk_session = UntalkSession(self, other_handshake_key)
+        self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
         if connection:
             self.add_connection(connection, elements.UntalkElement.type_)
         return self.untalk_session
@@ -1227,12 +1227,13 @@ class ElementParser:
         if conversation.untalk_session:
             if element.sender == self.peer.name:
                 if (conversation.untalk_session.state ==
-                        UntalkSession.state_sent):
+                        untalk.UntalkSession.state_sent):
                     message = 'voice conversation request sent to {}'
                 else:
                     # this peer has accepted the request
                     conversation.start_untalk()
-            elif conversation.untalk_session.state == UntalkSession.state_sent:
+            elif (conversation.untalk_session.state ==
+                    untalk.UntalkSession.state_sent):
                 # the other peer has accepted the request
                 conversation.start_untalk(
                     other_handshake_key=a2b(str(element)))
