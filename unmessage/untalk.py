@@ -222,9 +222,10 @@ class UntalkSession(object):
                 output=True,
                 output_device_index=self.output_device)
 
-            while self.is_talking:
-                audio = self.jitter_buffer.get()
-                self.stream_out.write(audio)
+            with suppress_alsa_errors():
+                while self.is_talking:
+                    audio = self.jitter_buffer.get()
+                    self.stream_out.write(audio)
         except Exception as e:
             self.conversation.peer._ui.notify_error(
                 errors.UntalkError(
@@ -244,20 +245,21 @@ class UntalkSession(object):
             self.stream_in.stop_stream()
             self.stream_in.start_stream()
 
-            while self.is_talking:
-                audio = self.stream_in.read(self.frame_size,
-                                            exception_on_overflow=False)
-                assert len(audio) == self.decoded_size
-                plainaudio = self.codec.encode(audio)
-                assert len(plainaudio) == self.encoded_size
-                cipheraudio = pyaxo.encrypt_symmetric(self.shared_key,
-                                                      plainaudio)
-                assert len(cipheraudio) == self.encrypted_size
-                try:
-                    self.connection.send(cipheraudio)
-                except AttributeError:
-                    # the peer has disconnected
-                    break
+            with suppress_alsa_errors():
+                while self.is_talking:
+                    audio = self.stream_in.read(self.frame_size,
+                                                exception_on_overflow=False)
+                    assert len(audio) == self.decoded_size
+                    plainaudio = self.codec.encode(audio)
+                    assert len(plainaudio) == self.encoded_size
+                    cipheraudio = pyaxo.encrypt_symmetric(self.shared_key,
+                                                          plainaudio)
+                    assert len(cipheraudio) == self.encrypted_size
+                    try:
+                        self.connection.send(cipheraudio)
+                    except AttributeError:
+                        # the peer has disconnected
+                        break
         except Exception as e:
             self.conversation.peer._ui.notify_error(
                 errors.UntalkError(
