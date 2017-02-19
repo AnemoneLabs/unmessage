@@ -6,6 +6,7 @@ from time import time
 
 import pyaudio
 import pyaxo
+from nacl.secret import SecretBox
 from opuslib.api import constants as opus_constants
 from opuslib.api import ctl as opus_ctl
 from opuslib.api import decoder as opus_decoder
@@ -28,7 +29,7 @@ OUTPUT_DEVICE = 0
 
 DECODE_FEC = False
 
-NONCE_SIZE = 40
+MAC_SIZE = 16
 
 
 class UntalkSession(object):
@@ -86,7 +87,7 @@ class UntalkSession(object):
 
     @property
     def encrypted_size(self):
-        return NONCE_SIZE + self.encoded_size
+        return SecretBox.NONCE_SIZE + MAC_SIZE + self.encoded_size
 
     def configure(self, input_device=None, output_device=None,
                   frame_size=None, loss_percentage=None,
