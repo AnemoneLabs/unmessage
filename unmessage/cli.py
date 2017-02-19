@@ -55,6 +55,8 @@ COMMANDS = {
                   ''],
     '/untalk': ['send or accept a request to talk with a peer using voice',
                 '<peer_name> [<input_device> <output_device>]'],
+    '/untalk-devices': ['display audio devices available',
+                        ''],
     '/verify': ["verify a peer's identity key",
                 '<peer_name> <identity_key>'],
 }
@@ -355,6 +357,16 @@ class Cli(PeerUi):
         except errors.UnknownContactError as e:
             self.display_attention(e.message)
 
+    def display_audio_devices(self):
+        devices = self.peer.get_audio_devices()
+        if devices:
+            output = ['Audio devices:']
+            for index, name in devices.items():
+                output.append('\tDevice {} has index {}'.format(name, index))
+        else:
+            output = ['There are no audio devices available']
+        self.display_info('\n'.join(output))
+
     def verify_contact(self, name, key):
         try:
             self.peer.verify_contact(name, key)
@@ -563,6 +575,9 @@ class Cli(PeerUi):
 
     def call_reqs_out(self):
         self.display_out_reqs()
+
+    def call_untalk_devices(self):
+        self.display_audio_devices()
 
     def call_verify(self, name, key):
         self.verify_contact(name, key)

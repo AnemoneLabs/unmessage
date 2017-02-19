@@ -880,6 +880,9 @@ class Peer(object):
             contact.is_verified = False
             raise errors.VerificationError(name)
 
+    def get_audio_devices(self):
+        return untalk.get_audio_devices()
+
     def untalk(self, name, input_device=None, output_device=None):
         t = Thread(target=self._untalk,
                    args=(self.get_conversation(name),
