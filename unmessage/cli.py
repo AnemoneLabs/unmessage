@@ -53,6 +53,10 @@ COMMANDS = {
                  ''],
     '/reqs-out': ['display outbound requests',
                   ''],
+    '/untalk': ['send or accept a request to talk with a peer using voice',
+                '<peer_name> [<input_device_index> <output_device_index>]'],
+    '/untalk-devices': ['display audio devices available',
+                        ''],
     '/verify': ["verify a peer's identity key",
                 '<peer_name> <identity_key>'],
 }
@@ -347,6 +351,22 @@ class Cli(PeerUi):
                 self.active_conv = conv
                 self.peer.send_message(name, message)
 
+    def untalk(self, name, input_device=None, output_device=None):
+        try:
+            self.peer.untalk(name, input_device, output_device)
+        except errors.UnknownContactError as e:
+            self.display_attention(e.message)
+
+    def display_audio_devices(self):
+        devices = self.peer.get_audio_devices()
+        if devices:
+            output = ['Audio devices:']
+            for index, name in devices.items():
+                output.append('\tDevice {} has index {}'.format(name, index))
+        else:
+            output = ['There are no audio devices available']
+        self.display_info('\n'.join(output))
+
     def verify_contact(self, name, key):
         try:
             self.peer.verify_contact(name, key)
@@ -556,8 +576,14 @@ class Cli(PeerUi):
     def call_reqs_out(self):
         self.display_out_reqs()
 
+    def call_untalk_devices(self):
+        self.display_audio_devices()
+
     def call_verify(self, name, key):
         self.verify_contact(name, key)
+
+    def call_untalk(self, name, input_device=None, output_device=None):
+        self.untalk(name, input_device, output_device)
 
 
 class _ConversationHandler(ConversationUi):

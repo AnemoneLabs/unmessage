@@ -29,8 +29,9 @@ from . import errors
 from . import notifications
 from . import packets
 from . import requests
+from . import untalk
 from .contact import Contact
-from .elements import RequestElement, PresenceElement
+from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
 from .utils import Address
@@ -711,6 +712,23 @@ class Peer(object):
                            content=RequestElement.request_accepted,
                            handshake_key=handshake_keys.pub)
 
+    def _untalk(self, conversation, input_device=None, output_device=None):
+        untalk_session = (conversation.untalk_session or
+                          conversation.init_untalk())
+        if untalk_session.is_talking:
+            conversation.stop_untalk()
+        else:
+            try:
+                untalk_session.configure(input_device, output_device)
+            except untalk.AudioDeviceNotFoundError as e:
+                conversation.remove_manager(untalk_session)
+                self._ui.notify_error(e)
+            else:
+                self._send_element(
+                    conversation,
+                    UntalkElement.type_,
+                    content=b2a(untalk_session.handshake_keys.pub))
+
     def _send_message(self, conversation, plaintext):
         self._send_element(conversation,
                            MessageElement.type_,
@@ -862,6 +880,16 @@ class Peer(object):
             contact.is_verified = False
             raise errors.VerificationError(name)
 
+    def get_audio_devices(self):
+        return untalk.get_audio_devices()
+
+    def untalk(self, name, input_device=None, output_device=None):
+        t = Thread(target=self._untalk,
+                   args=(self.get_conversation(name),
+                         input_device, output_device,))
+        t.daemon = True
+        t.start()
+
     def send_message(self, name, plaintext):
         t = Thread(target=self._send_message,
                    args=(self.get_conversation(name), plaintext,))
@@ -990,6 +1018,14 @@ class Conversation(object):
             # the session has not been initialized
             return None
 
+    @property
+    def untalk_session(self):
+        return self._get_manager(elements.UntalkElement.type_)
+
+    @untalk_session.setter
+    def _untalk_session(self, manager):
+        self._set_manager(manager, elements.UntalkElement.type_)
+
     def _get_manager(self, type_):
         try:
             return self._managers[type_]
@@ -1109,6 +1145,18 @@ class Conversation(object):
         self.connection = None
         self.close()
 
+    def init_untalk(self, connection=None, other_handshake_key=None):
+        self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
+        if connection:
+            self.add_connection(connection, elements.UntalkElement.type_)
+        return self.untalk_session
+
+    def start_untalk(self, other_handshake_key=None):
+        self.untalk_session.start(other_handshake_key)
+
+    def stop_untalk(self):
+        self.remove_manager(self.untalk_session)
+
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
         return self.auth_session
@@ -1182,6 +1230,31 @@ class AuthSession:
 class ElementParser:
     def __init__(self, peer):
         self.peer = peer
+
+    def _parse_untalk_element(self, element, conversation, connection=None):
+        message = None
+        if conversation.untalk_session:
+            if element.sender == self.peer.name:
+                if (conversation.untalk_session.state ==
+                        untalk.UntalkSession.state_sent):
+                    message = 'voice conversation request sent to {}'
+                else:
+                    # this peer has accepted the request
+                    conversation.start_untalk()
+            elif (conversation.untalk_session.state ==
+                    untalk.UntalkSession.state_sent):
+                # the other peer has accepted the request
+                conversation.start_untalk(
+                    other_handshake_key=a2b(str(element)))
+        elif element.receiver == self.peer.name:
+                message = '{} wishes to start a voice conversation'
+                conversation.init_untalk(connection,
+                                         other_handshake_key=a2b(str(element)))
+
+        if message:
+            conversation.ui.notify(
+                notifications.UntalkNotification(
+                    message.format(conversation.contact.name)))
 
     def _parse_pres_element(self, element, conversation, connection=None):
         if str(element) == PresenceElement.status_online:
@@ -1277,6 +1350,7 @@ class _ConversationFactory(Factory):
 
 class _ConversationProtocol(NetstringReceiver):
     type_regular = 'reg'
+    type_untalk = elements.UntalkElement.type_
 
     def __init__(self, factory, connection_made):
         self.factory = factory
@@ -1307,6 +1381,8 @@ class _ConversationProtocol(NetstringReceiver):
         try:
             if self.type_ == _ConversationProtocol.type_regular:
                 self.manager.queue_in_data.put([string, self])
+            elif self.type_ == _ConversationProtocol.type_untalk:
+                self.manager.receive_data(string)
             else:
                 self.factory.notify_error(errors.UnmessageError(
                     title='Connection of unknown type',
