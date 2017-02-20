@@ -134,6 +134,14 @@ class Peer(object):
         self._info.name = name
 
     @property
+    def onion_service_key(self):
+        return self._info.onion_service_key
+
+    @onion_service_key.setter
+    def _onion_service_key(self, onion_service_key):
+        self._info.onion_service_key = onion_service_key
+
+    @property
     def address(self):
         try:
             onion_server = open(os.path.join(
@@ -1398,10 +1406,11 @@ class _ConversationProtocol(NetstringReceiver):
 
 class PeerInfo:
     def __init__(self, name=None, port_local_server=None, identity_keys=None,
-                 contacts=None):
+                 onion_service_key=None, contacts=None):
         self.name = name
         self.port_local_server = port_local_server
         self.identity_keys = identity_keys
+        self.onion_service_key = onion_service_key
         self.contacts = contacts or dict()
 
 
@@ -1434,7 +1443,8 @@ class Persistence:
                     name TEXT,
                     port_local_server INTEGER,
                     priv_identity_key TEXT,
-                    pub_identity_key TEXT)''')
+                    pub_identity_key TEXT,
+                    onion_service_key TEXT)''')
         db.execute('''
             CREATE UNIQUE INDEX IF NOT EXISTS
                 peer_name
@@ -1469,11 +1479,13 @@ class Persistence:
                     peer''')
             row = cur.fetchone()
         if row:
+            onion_service_key = row['onion_service_key']
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
             port_local_server = int(row['port_local_server'])
             name = str(row['name'])
         else:
+            onion_service_key = None
             identity_keys = None
             port_local_server = None
             name = None
@@ -1492,7 +1504,8 @@ class Persistence:
                         bool(row['has_presence']))
             contacts[c.name] = c
 
-        return PeerInfo(name, port_local_server, identity_keys, contacts)
+        return PeerInfo(name, port_local_server, identity_keys,
+                        onion_service_key, contacts)
 
     def save_peer_info(self, peer_info):
         with self.db as db:
@@ -1506,12 +1519,14 @@ class Persistence:
                             name,
                             port_local_server,
                             priv_identity_key,
-                            pub_identity_key)
-                    VALUES (?, ?, ?, ?)''', (
+                            pub_identity_key,
+                            onion_service_key)
+                    VALUES (?, ?, ?, ?, ?)''', (
                         peer_info.name,
                         peer_info.port_local_server,
                         b2a(peer_info.identity_keys.priv),
-                        b2a(peer_info.identity_keys.pub)))
+                        b2a(peer_info.identity_keys.pub),
+                        peer_info.onion_service_key))
             db.execute('''
                 DELETE FROM
                     contacts''')
