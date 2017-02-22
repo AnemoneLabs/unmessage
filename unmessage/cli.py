@@ -197,10 +197,8 @@ class Cli(PeerUi):
 
     def start(self, name,
               local_server_port=None,
-              start_tor_socks=True,
-              use_tor_proxy=True,
+              launch_tor=True,
               tor_port=None,
-              start_onion_server=True,
               tor_control_port=None,
               remote_mode=False,
               local_mode=False):
@@ -214,10 +212,8 @@ class Cli(PeerUi):
             curses.wrapper(self.start_main,
                            name,
                            local_server_port,
-                           start_tor_socks,
-                           use_tor_proxy,
+                           launch_tor,
                            tor_port,
-                           start_onion_server,
                            tor_control_port,
                            local_mode)
 
@@ -231,18 +227,14 @@ class Cli(PeerUi):
 
     def init_peer(self, name,
                   local_server_port,
-                  start_tor_socks,
-                  use_tor_proxy,
+                  launch_tor,
                   tor_port,
-                  start_onion_server,
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
         self.peer.start(local_server_port,
-                        start_tor_socks,
-                        use_tor_proxy,
+                        launch_tor,
                         tor_port,
-                        start_onion_server,
                         tor_control_port,
                         local_mode)
 
@@ -402,10 +394,8 @@ class Cli(PeerUi):
     def start_main(self, stdscr,
                    name,
                    local_server_port,
-                   start_tor_socks,
-                   use_tor_proxy,
+                   launch_tor,
                    tor_port,
-                   start_onion_server,
                    tor_control_port,
                    local_mode):
         self.curses_helper = CursesHelper(stdscr, ui=self)
@@ -416,10 +406,8 @@ class Cli(PeerUi):
         try:
             self.init_peer(name,
                            local_server_port,
-                           start_tor_socks,
-                           use_tor_proxy,
+                           launch_tor,
                            tor_port,
-                           start_onion_server,
                            tor_control_port,
                            local_mode)
         except errors.UnmessageError as e:
@@ -901,15 +889,11 @@ def main(name=None):
     parser.add_argument('-l', '--local-server-port',
                         default=None,
                         type=int)
-    parser.add_argument('--no-tor-socks',
-                        action='store_false')
-    parser.add_argument('--no-tor-proxy',
+    parser.add_argument('--connect-to-tor',
                         action='store_false')
     parser.add_argument('-t', '--tor-port',
                         default=peer.TOR_PORT,
                         type=int)
-    parser.add_argument('--no-onion-service',
-                        action='store_false')
     parser.add_argument('-c', '--tor-control-port',
                         default=peer.TOR_CONTROL_PORT,
                         type=int)
@@ -923,10 +907,8 @@ def main(name=None):
     cli = Cli()
     cli.start(args.name,
               args.local_server_port,
-              args.no_tor_socks,
-              args.no_tor_proxy,
+              args.connect_to_tor,
               args.tor_port,
-              args.no_onion_service,
               args.tor_control_port,
               args.remote_mode,
               args.local_mode)
