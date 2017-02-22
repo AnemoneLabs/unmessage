@@ -253,18 +253,14 @@ class Peer(object):
         return manager
 
     def _connect(self, address, callback, errback):
-        if self._use_tor_proxy:
+        if self._local_mode:
+            point = TCP4ClientEndpoint(self._twisted_reactor,
+                                       host=HOST, port=address.port)
+
+        else:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
                                       socks_port=self._port_tor)
-        else:
-            if self._local_mode:
-                host = HOST
-            else:
-                host = address.host
-
-            point = TCP4ClientEndpoint(self._twisted_reactor,
-                                       host=host, port=address.port)
 
         def connect_from_thread():
             d = connectProtocol(point,
