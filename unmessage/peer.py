@@ -564,7 +564,7 @@ class Peer(object):
             if self._local_mode:
                 d.callback(None)
             else:
-                d_tor = self._config_tor(launch_tor)
+                d_tor = self._start_tor(launch_tor)
                 d_tor.addCallbacks(d.callback, d.errback)
 
         self._twisted_factory = _ConversationFactory(
@@ -584,7 +584,7 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, launch_tor):
+    def _start_tor(self, launch_tor):
         d_tor = Deferred()
 
         def errback(failure):
