@@ -555,7 +555,7 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
-    def _start_server(self, start_tor_socks, start_onion_server):
+    def _start_server(self, launch_tor):
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Configuring local server'))
 
@@ -570,11 +570,11 @@ class Peer(object):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Running local server'))
 
-            d_tor = self._config_tor(start_tor_socks, start_onion_server)
-            if d_tor:
-                d_tor.addCallbacks(d.callback, d.errback)
+            if self._local_mode:
+                d.callback(None)
             else:
-                d.callback(port)
+                d_tor = self._config_tor(launch_tor, launch_tor)
+                d_tor.addCallbacks(d.callback, d.errback)
 
         self._twisted_factory = _ConversationFactory(
             peer=self,
@@ -786,16 +786,12 @@ class Peer(object):
                         'found'))
 
     def start(self, local_server_port=None,
-              start_tor_socks=True,
-              use_tor_proxy=True,
+              launch_tor=True,
               tor_port=None,
-              start_onion_server=True,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
-            start_tor_socks = False
-            use_tor_proxy = False
-            start_onion_server = False
+            launch_tor = False
             self._local_mode = local_mode
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Starting peer'))
@@ -806,7 +802,6 @@ class Peer(object):
 
         if local_server_port:
             self._port_local_server = int(local_server_port)
-        self._use_tor_proxy = use_tor_proxy
         if tor_port:
             self._port_tor = int(tor_port)
         if tor_control_port:
@@ -845,7 +840,7 @@ class Peer(object):
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
 
-        d = self._start_server(start_tor_socks, start_onion_server)
+        d = self._start_server(launch_tor)
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
