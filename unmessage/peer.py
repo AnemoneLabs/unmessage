@@ -72,13 +72,12 @@ class Peer(object):
         self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
 
+        self._tor = None
+        self._onion_service = None
         self._port_tor = TOR_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
         self._local_mode = False
-        self._use_tor_proxy = True
-
-        self._tor_config = None
 
         self._twisted_reactor = reactor
         self._twisted_server_endpoint = None
@@ -569,7 +568,7 @@ class Peer(object):
             if self._local_mode:
                 d.callback(None)
             else:
-                d_tor = self._config_tor(launch_tor, launch_tor)
+                d_tor = self._config_tor(launch_tor)
                 d_tor.addCallbacks(d.callback, d.errback)
 
         self._twisted_factory = _ConversationFactory(
@@ -589,62 +588,76 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, start_tor_socks, start_onion_server):
-        if start_tor_socks or start_onion_server:
+    def _config_tor(self, launch_tor):
+        d_tor = Deferred()
+
+        def errback(failure):
+            d_tor.errback(failure)
+
+        def finish(result):
             self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Configuring Tor'))
+                notifications.UnmessageNotification(
+                    'Added Onion Service to Tor'))
 
-            config = txtorcon.TorConfig()
-            config.DataDirectory = self._path_tor_data_dir
-            config.ControlPort = self._port_tor_control
+            d_tor.callback(result)
 
-            if start_tor_socks:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Tor SOCKS port'))
+        def add_onion(tor):
+            self._tor = tor
 
-                config.SocksPort = self._port_tor
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Controlling Tor process'))
+
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Waiting for the Onion Service'))
+
+            onion_service_string = '{} {}:{}'.format(self._port_local_server,
+                                                     HOST,
+                                                     self._port_local_server)
+            if self.onion_service_key:
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string],
+                    self.onion_service_key)
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
             else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Tor SOCKS port"))
+                def save_key(result):
+                    self._onion_service_key = self._onion_service.private_key
 
-            if start_onion_server:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Onion Service'))
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string])
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
+                d_onion.addCallbacks(save_key)
 
-                config.HiddenServices = [
-                    txtorcon.HiddenService(
-                        config,
-                        self._path_onion_service_dir,
-                        ['{} {}:{}'.format(self._port_local_server,
-                                           HOST,
-                                           self._port_local_server)]
-                    )
-                ]
-            else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Onion Service"))
+            d_onion.addCallbacks(finish, errback)
 
-            config.save()
-
-            self._tor_config = config
+        if launch_tor:
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification('Launching Tor'))
 
             def display_bootstrap_lines(prog, tag, summary):
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
                         '{}%: {}'.format(prog, summary)))
 
-            return txtorcon.launch_tor(
-                config, self._twisted_reactor,
-                progress_updates=display_bootstrap_lines)
+            d_process = txtorcon.launch(
+                self._twisted_reactor,
+                progress_updates=display_bootstrap_lines,
+                data_directory=self._path_tor_data_dir,
+                socks_port=self._port_tor)
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
-                    "Using the system's Tor SOCKS port and Onion Service"))
-            return None
+                    'Connecting to existing Tor'))
+
+            endpoint = TCP4ClientEndpoint(self._twisted_reactor,
+                                          HOST,
+                                          self._port_tor_control)
+            d_process = txtorcon.connect(self._twisted_reactor, endpoint)
+
+        d_process.addCallbacks(add_onion, errback)
+
+        return d_tor
 
     def _send_request(self, identity, key):
         result = re.match(r'[^@]+@[^:]+(:(\d+))?$', identity)
