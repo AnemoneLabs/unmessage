@@ -143,14 +143,10 @@ class Peer(object):
     @property
     def address(self):
         try:
-            onion_server = open(os.path.join(
-                self._path_onion_service_dir, 'hostname'), 'r').read().strip()
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                onion_server = 'hostname-not-found'
-            else:
-                raise
-        return Address(onion_server, self._port_local_server)
+            onion_domain = self._onion_service.hostname
+        except AttributeError:
+            onion_domain = 'hostname-not-found'
+        return Address(onion_domain, self._port_local_server)
 
     @property
     def port_local_server(self):
