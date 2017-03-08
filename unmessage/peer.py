@@ -77,6 +77,7 @@ class Peer(object):
         self._port_tor = TOR_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
+        self._ip_local_server = HOST
         self._local_mode = False
 
         self._twisted_reactor = reactor
@@ -552,7 +553,7 @@ class Peer(object):
 
         endpoint = TCP4ServerEndpoint(self._twisted_reactor,
                                       self._port_local_server,
-                                      interface=HOST)
+                                      interface=self._ip_local_server)
         self._twisted_server_endpoint = endpoint
 
         d = Deferred()
@@ -808,7 +809,8 @@ class Peer(object):
                 message='A copy/paste mechanism for your system could not be '
                         'found'))
 
-    def start(self, local_server_port=None,
+    def start(self, local_server_ip=None,
+              local_server_port=None,
               launch_tor=True,
               tor_port=None,
               tor_control_port=None,
@@ -823,6 +825,8 @@ class Peer(object):
         self._load_peer_info()
         self._update_config()
 
+        if local_server_ip:
+            self._ip_local_server = local_server_ip
         if local_server_port:
             self._port_local_server = int(local_server_port)
         if tor_port:

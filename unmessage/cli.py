@@ -196,6 +196,7 @@ class Cli(PeerUi):
         window.clear()
 
     def start(self, name,
+              local_server_ip=None,
               local_server_port=None,
               launch_tor=True,
               tor_port=None,
@@ -211,6 +212,7 @@ class Cli(PeerUi):
         else:
             curses.wrapper(self.start_main,
                            name,
+                           local_server_ip,
                            local_server_port,
                            launch_tor,
                            tor_port,
@@ -226,13 +228,15 @@ class Cli(PeerUi):
         self.display_str(self.help_info)
 
     def init_peer(self, name,
+                  local_server_ip,
                   local_server_port,
                   launch_tor,
                   tor_port,
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
-        self.peer.start(local_server_port,
+        self.peer.start(local_server_ip,
+                        local_server_port,
                         launch_tor,
                         tor_port,
                         tor_control_port,
@@ -393,6 +397,7 @@ class Cli(PeerUi):
 
     def start_main(self, stdscr,
                    name,
+                   local_server_ip,
                    local_server_port,
                    launch_tor,
                    tor_port,
@@ -405,6 +410,7 @@ class Cli(PeerUi):
 
         try:
             self.init_peer(name,
+                           local_server_ip,
                            local_server_port,
                            launch_tor,
                            tor_port,
@@ -886,6 +892,8 @@ def main(name=None):
 
     parser.add_argument('-n', '--name',
                         default=name)
+    parser.add_argument('-i', '--local-server-ip',
+                        default=peer.HOST)
     parser.add_argument('-l', '--local-server-port',
                         default=None,
                         type=int)
@@ -906,6 +914,7 @@ def main(name=None):
 
     cli = Cli()
     cli.start(args.name,
+              args.local_server_ip,
               args.local_server_port,
               args.connect_to_tor,
               args.tor_port,
