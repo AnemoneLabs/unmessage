@@ -11,7 +11,6 @@ from threading import Event, Lock, Thread
 
 import pyaxo
 import pyperclip
-import txsocksx.errors
 import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
@@ -423,8 +422,8 @@ class Peer(object):
 
         def connection_failed(failure):
             if packet.type_ != PresenceElement.type_:
-                if failure.check(txsocksx.errors.HostUnreachable,
-                                 txsocksx.errors.TTLExpired):
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
                     conversation.ui.notify_offline(
                         errors.HostUnreachableError())
                 else:
@@ -710,8 +709,8 @@ class Peer(object):
                            errback=request_failed)
 
         def connection_failed(failure):
-            if failure.check(txsocksx.errors.HostUnreachable,
-                             txsocksx.errors.TTLExpired):
+            if failure.check(txtorcon.socks.HostUnreachableError,
+                             txtorcon.socks.TtlExpiredError):
                 self._ui.notify_error(errors.HostUnreachableError())
             else:
                 self._ui.notify_error(errors.UnmessageError(
