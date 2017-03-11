@@ -425,7 +425,9 @@ class Peer(object):
                 if failure.check(txtorcon.socks.HostUnreachableError,
                                  txtorcon.socks.TtlExpiredError):
                     conversation.ui.notify_offline(
-                        errors.HostUnreachableError())
+                        errors.OfflinePeerError(
+                            title=failure.getErrorMessage(),
+                            contact=conversation.contact.name))
                 else:
                     conversation.ui.notify_error(errors.UnmessageError(
                         title='Conversation connection failed',
@@ -711,7 +713,10 @@ class Peer(object):
         def connection_failed(failure):
             if failure.check(txtorcon.socks.HostUnreachableError,
                              txtorcon.socks.TtlExpiredError):
-                self._ui.notify_error(errors.HostUnreachableError())
+                self._ui.notify_error(
+                    errors.OfflinePeerError(title=failure.getErrorMessage(),
+                                            contact=contact.name,
+                                            is_request=True))
             else:
                 self._ui.notify_error(errors.UnmessageError(
                     title='Request connection failed',
