@@ -602,7 +602,8 @@ class _ConversationHandler(ConversationUi):
         self.update_prefix()
 
     def notify_offline(self, notification):
-        self.cli.display_attention(notification.message)
+        self.cli.display_attention(notification.message,
+                                   notification.title)
         self.update_prefix()
 
     def notify_online(self, notification):
