@@ -1095,7 +1095,7 @@ class Conversation(object):
             enc_handshake_key + a2b(packet.payload))
 
         if payload_hash == a2b(packet.payload_hash):
-            # the regular packet provides a handshake key, making it possible
+            # the reply packet provides a handshake key, making it possible
             # to do a Triple Diffie-Hellman handshake and create an Axolotl
             # state
             try:
