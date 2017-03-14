@@ -21,7 +21,7 @@ class ConnectionLostError(UnmessageError):
 
 class CorruptedPacketError(UnmessageError):
     def __init__(self, packet_type):
-        super(MalformedPacketError, self).__init__(
+        super(CorruptedPacketError, self).__init__(
             title='Corrupted packet error',
             message='The packet integrity check failed')
 
