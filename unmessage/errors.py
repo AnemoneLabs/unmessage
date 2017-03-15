@@ -41,6 +41,20 @@ class HostUnreachableError(UnmessageError):
                     'been established yet - try again in a minute')
 
 
+class InvalidIdentityError(UnmessageError):
+    def __init__(self):
+        super(InvalidIdentityError, self).__init__(
+            title='Value error',
+            message='The identity provided is not valid')
+
+
+class InvalidPublicKeyError(UnmessageError):
+    def __init__(self):
+        super(InvalidPublicKeyError, self).__init__(
+            title='Value error',
+            message='The public key provided is not valid')
+
+
 class InvalidNameError(UnmessageError):
     def __init__(self):
         super(InvalidNameError, self).__init__(
