@@ -924,7 +924,10 @@ class Introduction(Thread):
         data, _ = self.queue_in_data.get()
         try:
             self.handle_introduction_data(data)
-        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+        except (errors.MalformedPacketError,
+                errors.CorruptedPacketError,
+                errors.InvalidIdentityError,
+                errors.InvalidPublicKeyError) as e:
             e.title += ' caused by an unknown peer'
             self.peer._ui.notify_error(e)
             self.connection.remove_manager()
