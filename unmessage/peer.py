@@ -854,9 +854,14 @@ class Peer(object):
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
     def send_request(self, identity, key):
-        t = Thread(target=self._send_request, args=(identity, a2b(key),))
-        t.daemon = True
-        t.start()
+        try:
+            key_bytes = a2b(key)
+        except TypeError:
+            raise errors.InvalidPublicKeyError()
+        else:
+            t = Thread(target=self._send_request, args=(identity, key_bytes,))
+            t.daemon = True
+            t.start()
 
     def accept_request(self, identity, new_name=None):
         request = self._inbound_requests.pop(identity)
