@@ -648,47 +648,52 @@ class Peer(object):
         if not port:
             identity += ':' + str(PORT)
 
-        contact = Contact(identity, key)
-        req = self._create_request(contact)
+        try:
+            contact = Contact(identity, key)
+        except (errors.InvalidIdentityError,
+                errors.InvalidPublicKeyError) as e:
+            self._ui.notify_error(e)
+        else:
+            req = self._create_request(contact)
 
-        def connection_made(connection):
-            def request_sent():
-                self._outbound_requests[contact.identity] = req
-                self._ui.notify_out_request(
-                    notifications.ContactNotification(
-                        contact,
-                        title='Request sent',
-                        message='{} has received your request'.format(
-                            identity)))
+            def connection_made(connection):
+                def request_sent():
+                    self._outbound_requests[contact.identity] = req
+                    self._ui.notify_out_request(
+                        notifications.ContactNotification(
+                            contact,
+                            title='Request sent',
+                            message='{} has received your request'.format(
+                                identity)))
 
-            def request_failed(failure):
-                # TODO handle expected errors and display better messages
-                self._ui.notify_error(errors.UnmessageError(
-                    title='Request packet failed',
-                    message=str(failure)))
+                def request_failed(failure):
+                    # TODO handle expected errors and display better messages
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request packet failed',
+                        message=str(failure)))
 
-            conv = req.conversation
-            conv.start()
-            conv.set_active(connection, Conversation.state_out_req)
+                conv = req.conversation
+                conv.start()
+                conv.set_active(connection, Conversation.state_out_req)
 
-            # pack the ``RequestPacket`` into a ``str`` and send it to the
-            # other peer
-            conv.send_data(str(req.packet),
-                           callback=request_sent,
-                           errback=request_failed)
+                # pack the ``RequestPacket`` into a ``str`` and send it to the
+                # other peer
+                conv.send_data(str(req.packet),
+                               callback=request_sent,
+                               errback=request_failed)
 
-        def connection_failed(failure):
-            if failure.check(txsocksx.errors.HostUnreachable,
-                             txsocksx.errors.TTLExpired):
-                self._ui.notify_error(errors.HostUnreachableError())
-            else:
-                self._ui.notify_error(errors.UnmessageError(
-                    title='Request connection failed',
-                    message=str(failure)))
+            def connection_failed(failure):
+                if failure.check(txsocksx.errors.HostUnreachable,
+                                 txsocksx.errors.TTLExpired):
+                    self._ui.notify_error(errors.HostUnreachableError())
+                else:
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request connection failed',
+                        message=str(failure)))
 
-        self._connect(contact.address,
-                      callback=connection_made,
-                      errback=connection_failed)
+            self._connect(contact.address,
+                          callback=connection_made,
+                          errback=connection_failed)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
