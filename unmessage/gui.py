@@ -139,7 +139,10 @@ class Gui(Tk.Tk, PeerUi):
         showerror(notification.title, notification.message)
 
     def send_request(self, identity, key):
-        self.peer.send_request(identity, key)
+        try:
+            self.peer.send_request(identity, key)
+        except errors.InvalidPublicKeyError as e:
+            showerror(e.title, e.message)
 
     @threadsafe
     def notify_conv_established(self, notification):

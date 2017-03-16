@@ -282,7 +282,10 @@ class Cli(PeerUi):
         self.peer.copy_peer()
 
     def send_request(self, identity, key):
-        self.peer.send_request(identity, key)
+        try:
+            self.peer.send_request(identity, key)
+        except errors.InvalidPublicKeyError as e:
+            self.display_attention(e.message, e.title, error=True)
 
     def notify_in_request(self, notification):
         cmd = '/req-accept'
