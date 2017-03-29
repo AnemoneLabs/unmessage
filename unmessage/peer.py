@@ -611,7 +611,7 @@ class Peer(object):
                     'Waiting for the Onion Service'))
 
             onion_service_string = '{} {}:{}'.format(self._port_local_server,
-                                                     HOST,
+                                                     self._ip_local_server,
                                                      self._port_local_server)
             if self.onion_service_key:
                 self._onion_service = txtorcon.EphemeralHiddenService(
