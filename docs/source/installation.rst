@@ -41,7 +41,7 @@ All files used by unMessage are saved in ``~/.config/unMessage/``
 .. _`cryptully`: https://github.com/shanet/Cryptully
 .. _`curses`: https://docs.python.org/2/library/curses.html
 .. _`pip`: https://pypi.python.org/pypi/pip
-.. _`pyaxo`: https://github.com/anemonelabs/pyaxo
+.. _`pyaxo`: https://github.com/rxcomm/pyaxo
 .. _`setuptools`: https://pypi.python.org/pypi/setuptools
 .. _`tkinter`: https://docs.python.org/2/library/tkinter.html
 .. _`tor onion services`: https://www.torproject.org/docs/hidden-services.html

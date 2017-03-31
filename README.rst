@@ -81,7 +81,7 @@ or anything you feel will contribute to this application.
 .. _`matrix`: https://matrix.org
 .. _`oftc`: https://oftc.net
 .. _`pip`: https://pypi.python.org/pypi/pip
-.. _`pyaxo`: https://github.com/anemonelabs/pyaxo
+.. _`pyaxo`: https://github.com/rxcomm/pyaxo
 .. _`pynacl`: https://github.com/pyca/pynacl
 .. _`setuptools`: https://pypi.python.org/pypi/setuptools
 .. _`socialist millionaire protocol`: https://en.wikipedia.org/wiki/Socialist_millionaire
