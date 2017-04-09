@@ -58,6 +58,10 @@ TOR_CONTROL_PORT = 9055
 
 
 class Peer(object):
+    state_created = 'created'
+    state_running = 'running'
+    state_stopped = 'stopped'
+
     def __init__(self, name, ui=None):
         if not name:
             raise errors.InvalidNameError()
@@ -92,6 +96,8 @@ class Peer(object):
         self._event_stop = Event()
 
         self._ui = ui or PeerUi()
+
+        self._state = Peer.state_created
 
     @property
     def _path_peer_dir(self):
@@ -181,6 +187,10 @@ class Peer(object):
     @property
     def outbound_requests(self):
         return self._outbound_requests.values()
+
+    @property
+    def is_running(self):
+        return self._state == Peer.state_running
 
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
@@ -824,6 +834,8 @@ class Peer(object):
             for c in self.conversations:
                 c.start()
 
+            self._state = Peer.state_running
+
             self._send_presence()
 
             # TODO maybe return something useful to the UI?
@@ -857,6 +869,8 @@ class Peer(object):
             c.close()
 
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
+
+        self._state = Peer.state_stopped
 
     def send_request(self, identity, key):
         try:
