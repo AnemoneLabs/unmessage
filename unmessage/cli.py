@@ -60,6 +60,10 @@ COMMANDS = {
     '/verify': ["verify a peer's identity key",
                 '<peer_name> <identity_key>'],
 }
+NOT_RUNNING_COMMANDS = [
+    '/help',
+    '/quit',
+]
 
 RED = 1
 GREEN = 2
@@ -440,7 +444,13 @@ class Cli(PeerUi):
                 else:
                     command, args = self.parse_data(data)
                     if command:
-                        self.make_call(command, args)
+                        if (self.peer.is_running or
+                                command in NOT_RUNNING_COMMANDS):
+                            self.make_call(command, args)
+                        else:
+                            self.display_attention(
+                                'This command can only be called when the '
+                                'peer is running')
         except KeyboardInterrupt:
             pass
         self.stop()
