@@ -483,7 +483,8 @@ class Cli(PeerUi):
 
     def parse_data(self, data):
         command = args = None
-        if len(data) > sum_args_len(self.prefix):
+        prefix_len = sum_args_len(self.prefix)
+        if len(data) > prefix_len:
             echo = True
             split_data = data.split()
             try:
@@ -497,8 +498,8 @@ class Cli(PeerUi):
                     # message
                     command = '/msg'
                     name = split_data[0].split(SENDING_SUFFIX)[0]
-                    message = split_data[1:]
-                    args = [name] + message
+                    message = data[prefix_len:]
+                    args = [name, message]
                     echo = False
             except IndexError:
                 # the user modified the prefix
@@ -557,7 +558,7 @@ class Cli(PeerUi):
         self.display_key()
 
     def call_msg(self, name, *words):
-        msg = ' '.join(words).strip()
+        msg = ' '.join(words).rstrip()
         if not msg:
             raise TypeError()
         self.send_message(name, msg)
