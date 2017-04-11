@@ -29,7 +29,7 @@ setup(
         'PyNaCl>=1.0.1',
         'pyperclip>=1.5.27',
         'Twisted>=16.6.0',
-        'txtorcon>=0.17.0',
+        'txtorcon>=0.19.0',
     ],
     entry_points={
         'console_scripts': [
