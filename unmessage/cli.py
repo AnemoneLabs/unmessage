@@ -397,7 +397,8 @@ class Cli(PeerUi):
             self.display_attention(e.message)
         else:
             self.display_info(
-                'You will start sending your presence to ' + name,
+                'You have {} sending your presence to {}'.format(
+                    'started' if enable else 'stopped', name),
                 success=True)
 
     def authenticate(self, name, secret):
