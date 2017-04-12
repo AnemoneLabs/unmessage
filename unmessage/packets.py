@@ -100,7 +100,7 @@ def build_element_packet(data):
                          id_=lines[1],
                          part_num=lines[2],
                          part_len=lines[3],
-                         payload=lines[4])
+                         payload=LINESEP.join(lines[4:]))
 
 
 class IntroductionPacket:
