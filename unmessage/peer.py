@@ -52,7 +52,7 @@ TIMEOUT = 30
 HOST = '127.0.0.1'
 PORT = 50000
 
-TOR_PORT = 9054
+TOR_SOCKS_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
@@ -73,7 +73,7 @@ class Peer(object):
 
         self._tor = None
         self._onion_service = None
-        self._port_tor = TOR_PORT
+        self._port_tor_socks = TOR_SOCKS_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
         self._ip_local_server = HOST
@@ -255,7 +255,7 @@ class Peer(object):
         else:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
-                                      socks_port=self._port_tor)
+                                      socks_port=self._port_tor_socks)
 
         def connect_from_thread():
             d = connectProtocol(point,
@@ -642,7 +642,7 @@ class Peer(object):
                 self._twisted_reactor,
                 progress_updates=display_bootstrap_lines,
                 data_directory=self._path_tor_data_dir,
-                socks_port=self._port_tor)
+                socks_port=self._port_tor_socks)
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
@@ -816,7 +816,7 @@ class Peer(object):
     def start(self, local_server_ip=None,
               local_server_port=None,
               launch_tor=True,
-              tor_port=None,
+              tor_socks_port=None,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
@@ -833,8 +833,8 @@ class Peer(object):
             self._ip_local_server = local_server_ip
         if local_server_port:
             self._port_local_server = int(local_server_port)
-        if tor_port:
-            self._port_tor = int(tor_port)
+        if tor_socks_port:
+            self._port_tor_socks = int(tor_socks_port)
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
 

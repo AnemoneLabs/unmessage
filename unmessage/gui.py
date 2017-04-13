@@ -38,7 +38,7 @@ class Gui(Tk.Tk, PeerUi):
                  local_server_ip=None,
                  local_server_port=None,
                  launch_tor=True,
-                 tor_port=None,
+                 tor_socks_port=None,
                  tor_control_port=None,
                  local_mode=False):
         super(Gui, self).__init__()
@@ -83,7 +83,7 @@ class Gui(Tk.Tk, PeerUi):
                            local_server_ip,
                            local_server_port,
                            launch_tor,
-                           tor_port,
+                           tor_socks_port,
                            tor_control_port,
                            local_mode)
         else:
@@ -106,7 +106,7 @@ class Gui(Tk.Tk, PeerUi):
                   local_server_ip=None,
                   local_server_port=None,
                   launch_tor=True,
-                  tor_port=None,
+                  tor_socks_port=None,
                   tor_control_port=None,
                   local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
@@ -115,7 +115,7 @@ class Gui(Tk.Tk, PeerUi):
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,
-                        tor_port,
+                        tor_socks_port,
                         tor_control_port,
                         local_mode)
 
@@ -452,11 +452,11 @@ class PeerCreationTab(Tk.Frame, object):
         entry_local_server_port = Tk.Entry(frame_tab)
         entry_local_server_port.pack()
 
-        label_tor_port = Tk.Label(frame_tab,
-                                  text='Tor Port (Optional)')
-        label_tor_port.pack(anchor=Tk.W)
-        entry_tor_port = Tk.Entry(frame_tab)
-        entry_tor_port.pack()
+        label_tor_socks_port = Tk.Label(frame_tab,
+                                        text='Tor Port (Optional)')
+        label_tor_socks_port.pack(anchor=Tk.W)
+        entry_tor_socks_port = Tk.Entry(frame_tab)
+        entry_tor_socks_port.pack()
 
         label_tor_control_port = Tk.Label(
             frame_tab,
@@ -470,7 +470,7 @@ class PeerCreationTab(Tk.Frame, object):
             command=lambda: self.init_peer(
                 entry_name.get().strip(),
                 entry_local_server_port.get().strip(),
-                entry_tor_port.get().strip(),
+                entry_tor_socks_port.get().strip(),
                 entry_tor_control_port.get().strip()))
         button_start.pack(pady=(10, 0))
 
@@ -481,15 +481,15 @@ class PeerCreationTab(Tk.Frame, object):
                         lambda event: self.init_peer(
                             entry_name.get().strip(),
                             entry_local_server_port.get().strip(),
-                            entry_tor_port.get().strip(),
+                            entry_tor_socks_port.get().strip(),
                             entry_tor_control_port.get().strip()))
 
     def init_peer(self, name, local_server_port,
-                  tor_port, tor_control_port):
+                  tor_socks_port, tor_control_port):
         try:
             self.gui.init_peer(name,
                                local_server_port=local_server_port,
-                               tor_port=tor_port,
+                               tor_socks_port=tor_socks_port,
                                tor_control_port=tor_control_port)
         except errors.InvalidNameError as e:
             showerror(e.title, e.message)
@@ -606,8 +606,8 @@ def main(name=None):
                         type=int)
     parser.add_argument('--connect-to-tor',
                         action='store_false')
-    parser.add_argument('-t', '--tor-port',
-                        default=peer.TOR_PORT,
+    parser.add_argument('-s', '--tor-socks-port',
+                        default=peer.TOR_SOCKS_PORT,
                         type=int)
     parser.add_argument('-c', '--tor-control-port',
                         default=peer.TOR_CONTROL_PORT,
@@ -621,7 +621,7 @@ def main(name=None):
         args.local_server_ip,
         args.local_server_port,
         args.connect_to_tor,
-        args.tor_port,
+        args.tor_socks_port,
         args.tor_control_port,
         args.local_mode).mainloop()
 

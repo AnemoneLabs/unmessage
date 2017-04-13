@@ -199,7 +199,7 @@ class Cli(PeerUi):
               local_server_ip=None,
               local_server_port=None,
               launch_tor=True,
-              tor_port=None,
+              tor_socks_port=None,
               tor_control_port=None,
               remote_mode=False,
               local_mode=False):
@@ -215,7 +215,7 @@ class Cli(PeerUi):
                            local_server_ip,
                            local_server_port,
                            launch_tor,
-                           tor_port,
+                           tor_socks_port,
                            tor_control_port,
                            local_mode)
 
@@ -231,14 +231,14 @@ class Cli(PeerUi):
                   local_server_ip,
                   local_server_port,
                   launch_tor,
-                  tor_port,
+                  tor_socks_port,
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,
-                        tor_port,
+                        tor_socks_port,
                         tor_control_port,
                         local_mode)
 
@@ -400,7 +400,7 @@ class Cli(PeerUi):
                    local_server_ip,
                    local_server_port,
                    launch_tor,
-                   tor_port,
+                   tor_socks_port,
                    tor_control_port,
                    local_mode):
         self.curses_helper = CursesHelper(stdscr, ui=self)
@@ -413,7 +413,7 @@ class Cli(PeerUi):
                            local_server_ip,
                            local_server_port,
                            launch_tor,
-                           tor_port,
+                           tor_socks_port,
                            tor_control_port,
                            local_mode)
         except errors.UnmessageError as e:
@@ -900,8 +900,8 @@ def main(name=None):
                         type=int)
     parser.add_argument('--connect-to-tor',
                         action='store_false')
-    parser.add_argument('-t', '--tor-port',
-                        default=peer.TOR_PORT,
+    parser.add_argument('-s', '--tor-socks-port',
+                        default=peer.TOR_SOCKS_PORT,
                         type=int)
     parser.add_argument('-c', '--tor-control-port',
                         default=peer.TOR_CONTROL_PORT,
@@ -918,7 +918,7 @@ def main(name=None):
               args.local_server_ip,
               args.local_server_port,
               args.connect_to_tor,
-              args.tor_port,
+              args.tor_socks_port,
               args.tor_control_port,
               args.remote_mode,
               args.local_mode)
