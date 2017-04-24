@@ -11,7 +11,6 @@ from threading import Event, Lock, Thread
 
 import pyaxo
 import pyperclip
-import txsocksx.errors
 import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
@@ -53,7 +52,7 @@ TIMEOUT = 30
 HOST = '127.0.0.1'
 PORT = 50000
 
-TOR_PORT = 9054
+TOR_SOCKS_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
@@ -76,13 +75,13 @@ class Peer(object):
         self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
 
-        self._port_tor = TOR_PORT
+        self._tor = None
+        self._onion_service = None
+        self._port_tor_socks = TOR_SOCKS_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
+        self._ip_local_server = HOST
         self._local_mode = False
-        self._use_tor_proxy = True
-
-        self._tor_config = None
 
         self._twisted_reactor = reactor
         self._twisted_server_endpoint = None
@@ -140,16 +139,20 @@ class Peer(object):
         self._info.name = name
 
     @property
+    def onion_service_key(self):
+        return self._info.onion_service_key
+
+    @onion_service_key.setter
+    def _onion_service_key(self, onion_service_key):
+        self._info.onion_service_key = onion_service_key
+
+    @property
     def address(self):
         try:
-            onion_server = open(os.path.join(
-                self._path_onion_service_dir, 'hostname'), 'r').read().strip()
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                onion_server = 'hostname-not-found'
-            else:
-                raise
-        return Address(onion_server, self._port_local_server)
+            onion_domain = self._onion_service.hostname
+        except AttributeError:
+            onion_domain = 'hostname-not-found'
+        return Address(onion_domain, self._port_local_server)
 
     @property
     def port_local_server(self):
@@ -255,18 +258,14 @@ class Peer(object):
         return manager
 
     def _connect(self, address, callback, errback):
-        if self._use_tor_proxy:
+        if self._local_mode:
+            point = TCP4ClientEndpoint(self._twisted_reactor,
+                                       host=HOST, port=address.port)
+
+        else:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
-                                      socks_port=self._port_tor)
-        else:
-            if self._local_mode:
-                host = HOST
-            else:
-                host = address.host
-
-            point = TCP4ClientEndpoint(self._twisted_reactor,
-                                       host=host, port=address.port)
+                                      socks_port=self._port_tor_socks)
 
         def connect_from_thread():
             d = connectProtocol(point,
@@ -433,10 +432,12 @@ class Peer(object):
 
         def connection_failed(failure):
             if packet.type_ != PresenceElement.type_:
-                if failure.check(txsocksx.errors.HostUnreachable,
-                                 txsocksx.errors.TTLExpired):
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
                     conversation.ui.notify_offline(
-                        errors.HostUnreachableError())
+                        errors.OfflinePeerError(
+                            title=failure.getErrorMessage(),
+                            contact=conversation.contact.name))
                 else:
                     conversation.ui.notify_error(errors.UnmessageError(
                         title='Conversation connection failed',
@@ -557,13 +558,13 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
-    def _start_server(self, start_tor_socks, start_onion_server):
+    def _start_server(self, launch_tor):
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Configuring local server'))
 
         endpoint = TCP4ServerEndpoint(self._twisted_reactor,
                                       self._port_local_server,
-                                      interface=HOST)
+                                      interface=self._ip_local_server)
         self._twisted_server_endpoint = endpoint
 
         d = Deferred()
@@ -572,11 +573,11 @@ class Peer(object):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Running local server'))
 
-            d_tor = self._config_tor(start_tor_socks, start_onion_server)
-            if d_tor:
-                d_tor.addCallbacks(d.callback, d.errback)
+            if self._local_mode:
+                d.callback(None)
             else:
-                d.callback(port)
+                d_tor = self._start_tor(launch_tor)
+                d_tor.addCallbacks(d.callback, d.errback)
 
         self._twisted_factory = _ConversationFactory(
             peer=self,
@@ -595,62 +596,94 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, start_tor_socks, start_onion_server):
-        if start_tor_socks or start_onion_server:
+    def _start_tor(self, launch_tor):
+        d_tor = Deferred()
+
+        def errback(failure):
+            d_tor.errback(failure)
+
+        def finish(result):
             self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Configuring Tor'))
+                notifications.UnmessageNotification(
+                    'Added Onion Service to Tor'))
 
-            config = txtorcon.TorConfig()
-            config.DataDirectory = self._path_tor_data_dir
-            config.ControlPort = self._port_tor_control
+            d_tor.callback(result)
 
-            if start_tor_socks:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Tor SOCKS port'))
+        def add_onion(tor):
+            self._tor = tor
 
-                config.SocksPort = self._port_tor
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Controlling Tor process'))
+
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Waiting for the Onion Service'))
+
+            onion_service_string = '{} {}:{}'.format(self._port_local_server,
+                                                     self._ip_local_server,
+                                                     self._port_local_server)
+            if self.onion_service_key:
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string],
+                    self.onion_service_key)
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
             else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Tor SOCKS port"))
+                def save_key(result):
+                    self._onion_service_key = self._onion_service.private_key
 
-            if start_onion_server:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Onion Service'))
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string])
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
+                d_onion.addCallbacks(save_key)
 
-                config.HiddenServices = [
-                    txtorcon.HiddenService(
-                        config,
-                        self._path_onion_service_dir,
-                        ['{} {}:{}'.format(self._port_local_server,
-                                           HOST,
-                                           self._port_local_server)]
-                    )
-                ]
-            else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Onion Service"))
+            d_onion.addCallbacks(finish, errback)
 
-            config.save()
-
-            self._tor_config = config
+        if launch_tor:
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification('Launching Tor'))
 
             def display_bootstrap_lines(prog, tag, summary):
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
                         '{}%: {}'.format(prog, summary)))
 
-            return txtorcon.launch_tor(
-                config, self._twisted_reactor,
-                progress_updates=display_bootstrap_lines)
+            d_process = txtorcon.launch(
+                self._twisted_reactor,
+                progress_updates=display_bootstrap_lines,
+                data_directory=self._path_tor_data_dir,
+                socks_port=self._port_tor_socks)
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
-                    "Using the system's Tor SOCKS port and Onion Service"))
-            return None
+                    'Connecting to existing Tor'))
+
+            endpoint = TCP4ClientEndpoint(self._twisted_reactor,
+                                          HOST,
+                                          self._port_tor_control)
+            d_process = txtorcon.connect(self._twisted_reactor, endpoint)
+
+        d_process.addCallbacks(add_onion, errback)
+
+        return d_tor
+
+    def _stop_tor(self):
+        if self._onion_service:
+            self._ui.notify(
+                notifications.UnmessageNotification(
+                    'Removing Onion Service from Tor'))
+
+            e = Event()
+
+            def removed(result):
+                self._ui.notify(
+                    notifications.UnmessageNotification(
+                        'Removed Onion Service from Tor'))
+                e.set()
+
+            d = self._onion_service.remove_from_tor(self._tor._protocol)
+            d.addCallback(removed)
+            e.wait()
 
     def _send_request(self, identity, key):
         result = re.match(r'[^@]+@[^:]+(:(\d+))?$', identity)
@@ -693,9 +726,12 @@ class Peer(object):
                                errback=request_failed)
 
             def connection_failed(failure):
-                if failure.check(txsocksx.errors.HostUnreachable,
-                                 txsocksx.errors.TTLExpired):
-                    self._ui.notify_error(errors.HostUnreachableError())
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    self._ui.notify_error(errors.OfflinePeerError(
+                        title=failure.getErrorMessage(),
+                        contact=contact.name,
+                        is_request=True))
                 else:
                     self._ui.notify_error(errors.UnmessageError(
                         title='Request connection failed',
@@ -792,17 +828,14 @@ class Peer(object):
                 message='A copy/paste mechanism for your system could not be '
                         'found'))
 
-    def start(self, local_server_port=None,
-              start_tor_socks=True,
-              use_tor_proxy=True,
-              tor_port=None,
-              start_onion_server=True,
+    def start(self, local_server_ip=None,
+              local_server_port=None,
+              launch_tor=True,
+              tor_socks_port=None,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
-            start_tor_socks = False
-            use_tor_proxy = False
-            start_onion_server = False
+            launch_tor = False
             self._local_mode = local_mode
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Starting peer'))
@@ -811,11 +844,12 @@ class Peer(object):
         self._load_peer_info()
         self._update_config()
 
+        if local_server_ip:
+            self._ip_local_server = local_server_ip
         if local_server_port:
             self._port_local_server = int(local_server_port)
-        self._use_tor_proxy = use_tor_proxy
-        if tor_port:
-            self._port_tor = int(tor_port)
+        if tor_socks_port:
+            self._port_tor_socks = int(tor_socks_port)
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
 
@@ -854,7 +888,7 @@ class Peer(object):
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
 
-        d = self._start_server(start_tor_socks, start_onion_server)
+        d = self._start_server(launch_tor)
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
@@ -867,6 +901,8 @@ class Peer(object):
 
         for c in self.conversations:
             c.close()
+
+        self._stop_tor()
 
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
@@ -1425,10 +1461,11 @@ class _ConversationProtocol(NetstringReceiver):
 
 class PeerInfo:
     def __init__(self, name=None, port_local_server=None, identity_keys=None,
-                 contacts=None):
+                 onion_service_key=None, contacts=None):
         self.name = name
         self.port_local_server = port_local_server
         self.identity_keys = identity_keys
+        self.onion_service_key = onion_service_key
         self.contacts = contacts or dict()
 
 
@@ -1461,7 +1498,8 @@ class Persistence:
                     name TEXT,
                     port_local_server INTEGER,
                     priv_identity_key TEXT,
-                    pub_identity_key TEXT)''')
+                    pub_identity_key TEXT,
+                    onion_service_key TEXT)''')
         db.execute('''
             CREATE UNIQUE INDEX IF NOT EXISTS
                 peer_name
@@ -1496,11 +1534,13 @@ class Persistence:
                     peer''')
             row = cur.fetchone()
         if row:
+            onion_service_key = row['onion_service_key']
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
             port_local_server = int(row['port_local_server'])
             name = str(row['name'])
         else:
+            onion_service_key = None
             identity_keys = None
             port_local_server = None
             name = None
@@ -1519,7 +1559,8 @@ class Persistence:
                         bool(row['has_presence']))
             contacts[c.name] = c
 
-        return PeerInfo(name, port_local_server, identity_keys, contacts)
+        return PeerInfo(name, port_local_server, identity_keys,
+                        onion_service_key, contacts)
 
     def save_peer_info(self, peer_info):
         with self.db as db:
@@ -1533,12 +1574,14 @@ class Persistence:
                             name,
                             port_local_server,
                             priv_identity_key,
-                            pub_identity_key)
-                    VALUES (?, ?, ?, ?)''', (
+                            pub_identity_key,
+                            onion_service_key)
+                    VALUES (?, ?, ?, ?, ?)''', (
                         peer_info.name,
                         peer_info.port_local_server,
                         b2a(peer_info.identity_keys.priv),
-                        b2a(peer_info.identity_keys.pub)))
+                        b2a(peer_info.identity_keys.pub),
+                        peer_info.onion_service_key))
             db.execute('''
                 DELETE FROM
                     contacts''')

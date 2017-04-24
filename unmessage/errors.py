@@ -33,12 +33,15 @@ class CursesScreenResizedError(UnmessageError):
             message='The curses screen has been resized')
 
 
-class HostUnreachableError(UnmessageError):
-    def __init__(self):
-        super(HostUnreachableError, self).__init__(
-            title='Host unreachable',
-            message="The other party's Onion Service is not online or has not "
-                    'been established yet - try again in a minute')
+class OfflinePeerError(UnmessageError):
+    def __init__(self, title, contact, is_request=False):
+        message = "{} is offline".format(contact)
+        if is_request:
+            message += ' or such Onion Service does not exist'
+
+        super(OfflinePeerError, self).__init__(
+            title=title,
+            message=message)
 
 
 class InvalidIdentityError(UnmessageError):

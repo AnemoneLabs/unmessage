@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import argparse
 import Queue
 import sys
 import Tkinter as Tk
@@ -10,6 +11,7 @@ from tkSimpleDialog import askstring
 from pyaxo import b2a
 
 from . import errors
+from . import peer
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -32,7 +34,13 @@ def write_on_text(text, content, clear=True):
 
 
 class Gui(Tk.Tk, PeerUi):
-    def __init__(self, name):
+    def __init__(self, name,
+                 local_server_ip=None,
+                 local_server_port=None,
+                 launch_tor=True,
+                 tor_socks_port=None,
+                 tor_control_port=None,
+                 local_mode=False):
         super(Gui, self).__init__()
 
         self.calls_queue = Queue.Queue()
@@ -71,7 +79,13 @@ class Gui(Tk.Tk, PeerUi):
         self.config(menu=self.menu_bar)
 
         if name:
-            self.init_peer(name)
+            self.init_peer(name,
+                           local_server_ip,
+                           local_server_port,
+                           launch_tor,
+                           tor_socks_port,
+                           tor_control_port,
+                           local_mode)
         else:
             self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
             self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
@@ -88,14 +102,22 @@ class Gui(Tk.Tk, PeerUi):
             pass
         self.after(100, self.check_calls)
 
-    def init_peer(self, name, local_server_port=None,
-                  tor_port=None, tor_control_port=None):
+    def init_peer(self, name,
+                  local_server_ip=None,
+                  local_server_port=None,
+                  launch_tor=True,
+                  tor_socks_port=None,
+                  tor_control_port=None,
+                  local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
         self.peer = Peer(name, self)
-        self.peer.start(local_server_port=local_server_port,
-                        tor_port=tor_port,
-                        tor_control_port=tor_control_port)
+        self.peer.start(local_server_ip,
+                        local_server_port,
+                        launch_tor,
+                        tor_socks_port,
+                        tor_control_port,
+                        local_mode)
 
     @threadsafe
     def notify_error(self, error):
@@ -433,11 +455,11 @@ class PeerCreationTab(Tk.Frame, object):
         entry_local_server_port = Tk.Entry(frame_tab)
         entry_local_server_port.pack()
 
-        label_tor_port = Tk.Label(frame_tab,
-                                  text='Tor Port (Optional)')
-        label_tor_port.pack(anchor=Tk.W)
-        entry_tor_port = Tk.Entry(frame_tab)
-        entry_tor_port.pack()
+        label_tor_socks_port = Tk.Label(frame_tab,
+                                        text='Tor Port (Optional)')
+        label_tor_socks_port.pack(anchor=Tk.W)
+        entry_tor_socks_port = Tk.Entry(frame_tab)
+        entry_tor_socks_port.pack()
 
         label_tor_control_port = Tk.Label(
             frame_tab,
@@ -451,7 +473,7 @@ class PeerCreationTab(Tk.Frame, object):
             command=lambda: self.init_peer(
                 entry_name.get().strip(),
                 entry_local_server_port.get().strip(),
-                entry_tor_port.get().strip(),
+                entry_tor_socks_port.get().strip(),
                 entry_tor_control_port.get().strip()))
         button_start.pack(pady=(10, 0))
 
@@ -462,14 +484,16 @@ class PeerCreationTab(Tk.Frame, object):
                         lambda event: self.init_peer(
                             entry_name.get().strip(),
                             entry_local_server_port.get().strip(),
-                            entry_tor_port.get().strip(),
+                            entry_tor_socks_port.get().strip(),
                             entry_tor_control_port.get().strip()))
 
     def init_peer(self, name, local_server_port,
-                  tor_port, tor_control_port):
+                  tor_socks_port, tor_control_port):
         try:
-            self.gui.init_peer(name, local_server_port,
-                               tor_port, tor_control_port)
+            self.gui.init_peer(name,
+                               local_server_port=local_server_port,
+                               tor_socks_port=tor_socks_port,
+                               tor_control_port=tor_control_port)
         except errors.InvalidNameError as e:
             showerror(e.title, e.message)
         else:
@@ -574,7 +598,35 @@ def get_auth_frame_configs(conversation):
 
 
 def main(name=None):
-    Gui(name).mainloop()
+    parser = argparse.ArgumentParser(description='''{}'''.format(APP_NAME))
+
+    parser.add_argument('-n', '--name',
+                        default=name)
+    parser.add_argument('-i', '--local-server-ip',
+                        default=peer.HOST)
+    parser.add_argument('-l', '--local-server-port',
+                        default=None,
+                        type=int)
+    parser.add_argument('--connect-to-tor',
+                        action='store_false')
+    parser.add_argument('-s', '--tor-socks-port',
+                        default=peer.TOR_SOCKS_PORT,
+                        type=int)
+    parser.add_argument('-c', '--tor-control-port',
+                        default=peer.TOR_CONTROL_PORT,
+                        type=int)
+    parser.add_argument('-L', '--local-mode',
+                        action='store_true')
+
+    args = parser.parse_args()
+
+    Gui(args.name,
+        args.local_server_ip,
+        args.local_server_port,
+        args.connect_to_tor,
+        args.tor_socks_port,
+        args.tor_control_port,
+        args.local_mode).mainloop()
 
 
 if __name__ == '__main__':
