@@ -8,7 +8,7 @@ Install the following requirements via package manager::
       libsodium-dev libssl-dev portaudio19-dev python-dev python-tk
 
     # If using Fedora
-    $ sudo yum install gcc libffi-devel libsodium-devel \
+    $ sudo dnf install gcc libffi-devel libsodium-devel \
       openssl-devel opus portaudio-devel python-devel \
       redhat-rpm-config tkinter
 
@@ -24,7 +24,7 @@ provided by the package manager::
     $ apt-cache show tor
 
     # If using Fedora
-    $ yum info tor
+    $ dnf info tor
 
 If the version to be provided is not at least ``0.2.7.1``, you will
 have to `set up Tor's package repository`_. Once you have a repository
@@ -34,7 +34,7 @@ which can provide an updated **tor**, install it::
     $ sudo apt-get install tor
 
     # If using Fedora
-    $ sudo yum install tor
+    $ sudo dnf install tor
 
 Installing
 ----------
