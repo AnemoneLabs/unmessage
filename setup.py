@@ -28,7 +28,7 @@ setup(
         'pyaxo>=0.7.3',
         'PyNaCl>=1.0.1',
         'pyperclip>=1.5.27',
-        'Twisted>=16.6.0',
+        'Twisted[tls]>=16.6.0',
         'txtorcon>=0.19.0',
     ],
     entry_points={
