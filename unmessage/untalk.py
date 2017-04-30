@@ -105,6 +105,8 @@ class UntalkSession(object):
             self.decode_fec = int(decode_fec)
 
         device_indexes = get_audio_devices().keys()
+        if not device_indexes:
+            raise NoAudioDevicesAvailableError()
         if self.input_device not in device_indexes:
             raise AudioDeviceNotFoundError(direction='input',
                                            index=self.input_device)
@@ -319,6 +321,12 @@ class AudioDeviceNotFoundError(errors.UntalkError):
         super(AudioDeviceNotFoundError, self).__init__(
             message='The {} device at index {} could not be '
                     'found'.format(direction, index))
+
+
+class NoAudioDevicesAvailableError(errors.UntalkError):
+    def __init__(self):
+        super(NoAudioDevicesAvailableError, self).__init__(
+            message='There are no audio devices available')
 
 
 def get_audio_devices():
