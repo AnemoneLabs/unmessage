@@ -364,7 +364,7 @@ class Cli(PeerUi):
         devices = self.peer.get_audio_devices()
         if devices:
             output = ['Audio devices:']
-            for index, name in devices.items():
+            for name, index in devices.items():
                 output.append('\tDevice {} has index {}'.format(name, index))
         else:
             output = ['There are no audio devices available']

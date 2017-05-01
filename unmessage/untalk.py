@@ -92,8 +92,8 @@ class UntalkSession(object):
     def configure(self, input_device=None, output_device=None,
                   frame_size=None, loss_percentage=None,
                   decode_fec=None):
-        device_indexes = get_audio_devices().keys()
-        if not device_indexes:
+        devices = get_audio_devices()
+        if not devices:
             raise NoAudioDevicesAvailableError()
 
         if input_device is not None:
@@ -101,10 +101,10 @@ class UntalkSession(object):
         if output_device is not None:
             self.output_device = int(output_device)
 
-        if self.input_device not in devices.keys():
+        if self.input_device not in devices.values():
             raise AudioDeviceNotFoundError(direction='input',
                                            index=self.input_device)
-        if self.output_device not in devices.keys():
+        if self.output_device not in devices.values():
             raise AudioDeviceNotFoundError(direction='output',
                                            index=self.output_device)
 
@@ -336,7 +336,7 @@ def get_audio_devices():
         audio = pyaudio.PyAudio()
     for i in range(audio.get_device_count()):
         d = audio.get_device_info_by_index(i)
-        devices[d['index']] = d['name']
+        devices[d['name']] = d['index']
     return devices
 
 
