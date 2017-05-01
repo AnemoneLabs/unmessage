@@ -24,8 +24,9 @@ SAMPLE_RATE = 48000  # max rate
 FRAME_SIZE = 960  # 20 ms at 48000
 LOSS_PERCENTAGE = 2
 
-INPUT_DEVICE = 1
-OUTPUT_DEVICE = 0
+DEFAULT_DEVICE = 'default'
+INPUT_DEVICE = DEFAULT_DEVICE
+OUTPUT_DEVICE = 'pulse'
 
 DECODE_FEC = False
 
@@ -63,8 +64,8 @@ class UntalkSession(object):
         self.stream_in = None
         self.stream_out = None
 
-        self.input_device = INPUT_DEVICE
-        self.output_device = OUTPUT_DEVICE
+        self.input_device = None
+        self.output_device = None
         self.frame_size = FRAME_SIZE
         self.loss_percentage = LOSS_PERCENTAGE
         self.decode_fec = DECODE_FEC
@@ -96,9 +97,23 @@ class UntalkSession(object):
         if not devices:
             raise NoAudioDevicesAvailableError()
 
-        if input_device is not None:
+        if input_device is None:
+            try:
+                self.input_device = devices[INPUT_DEVICE]
+            except KeyError:
+                raise DefaultAudioDeviceNotFoundError(direction='input')
+        else:
             self.input_device = int(input_device)
-        if output_device is not None:
+
+        if output_device is None:
+            try:
+                self.output_device = devices[OUTPUT_DEVICE]
+            except KeyError:
+                try:
+                    self.output_device = devices[DEFAULT_DEVICE]
+                except KeyError:
+                    raise DefaultAudioDeviceNotFoundError(direction='output')
+        else:
             self.output_device = int(output_device)
 
         if self.input_device not in devices.values():
@@ -322,6 +337,13 @@ class AudioDeviceNotFoundError(errors.UntalkError):
         super(AudioDeviceNotFoundError, self).__init__(
             message='The {} device at index {} could not be '
                     'found'.format(direction, index))
+
+
+class DefaultAudioDeviceNotFoundError(errors.UntalkError):
+    def __init__(self, direction):
+        super(DefaultAudioDeviceNotFoundError, self).__init__(
+            message='The {} device could not be found automatically - you '
+                    'must provide its index manually'.format(direction))
 
 
 class NoAudioDevicesAvailableError(errors.UntalkError):
