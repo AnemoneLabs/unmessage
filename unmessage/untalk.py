@@ -92,27 +92,28 @@ class UntalkSession(object):
     def configure(self, input_device=None, output_device=None,
                   frame_size=None, loss_percentage=None,
                   decode_fec=None):
+        device_indexes = get_audio_devices().keys()
+        if not device_indexes:
+            raise NoAudioDevicesAvailableError()
 
         if input_device is not None:
             self.input_device = int(input_device)
         if output_device is not None:
             self.output_device = int(output_device)
+
+        if self.input_device not in devices.keys():
+            raise AudioDeviceNotFoundError(direction='input',
+                                           index=self.input_device)
+        if self.output_device not in devices.keys():
+            raise AudioDeviceNotFoundError(direction='output',
+                                           index=self.output_device)
+
         if frame_size:
             self.frame_size = int(frame_size)
         if loss_percentage is not None:
             self.loss_percentage = int(loss_percentage)
         if decode_fec is not None:
             self.decode_fec = int(decode_fec)
-
-        device_indexes = get_audio_devices().keys()
-        if not device_indexes:
-            raise NoAudioDevicesAvailableError()
-        if self.input_device not in device_indexes:
-            raise AudioDeviceNotFoundError(direction='input',
-                                           index=self.input_device)
-        if self.output_device not in device_indexes:
-            raise AudioDeviceNotFoundError(direction='output',
-                                           index=self.output_device)
 
         self.jitter_buffer = Queue()
         self.codec = OpusCodec(self)
