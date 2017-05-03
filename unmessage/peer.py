@@ -765,26 +765,40 @@ class Peer(object):
 
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
-            untalk_session = (conversation.untalk_session or
-                              conversation.init_untalk())
-            if untalk_session.is_talking:
-                conversation.stop_untalk()
-            else:
-                try:
-                    untalk_session.configure(input_device, output_device)
-                except untalk.AudioDeviceNotFoundError as e:
-                    conversation.remove_manager(untalk_session)
-                    self._ui.notify_error(e)
+            if self._can_talk(conversation):
+                untalk_session = (conversation.untalk_session or
+                                  conversation.init_untalk())
+                if untalk_session.is_talking:
+                    conversation.stop_untalk()
                 else:
-                    self._send_element(
-                        conversation,
-                        UntalkElement.type_,
-                        content=b2a(untalk_session.handshake_keys.pub))
+                    try:
+                        untalk_session.configure(input_device, output_device)
+                    except untalk.AudioDeviceNotFoundError as e:
+                        conversation.remove_manager(untalk_session)
+                        self._ui.notify_error(e)
+                    else:
+                        self._send_element(
+                            conversation,
+                            UntalkElement.type_,
+                            content=b2a(untalk_session.handshake_keys.pub))
+            else:
+                self._ui.notify_error(errors.UntalkError(
+                    message='You can only make one voice conversation at a '
+                            'time'))
         else:
             # TODO automatically connect and send request
             self._ui.notify_error(errors.UntalkError(
                 message='You must be connected to {} in order to start a '
                         'conversation'.format(conversation.contact.name)))
+
+    def _can_talk(self, conversation):
+        for c in self.conversations:
+            try:
+                if c.untalk_session.is_talking and c is not conversation:
+                    return False
+            except AttributeError:
+                continue
+        return True
 
     def _send_message(self, conversation, plaintext):
         self._send_element(conversation,
