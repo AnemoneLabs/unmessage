@@ -599,9 +599,6 @@ class Peer(object):
     def _start_tor(self, launch_tor):
         d_tor = Deferred()
 
-        def errback(failure):
-            d_tor.errback(failure)
-
         def finish(result):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
@@ -635,9 +632,9 @@ class Peer(object):
                 self._onion_service = txtorcon.EphemeralHiddenService(
                     [onion_service_string])
                 d_onion = self._onion_service.add_to_tor(self._tor._protocol)
-                d_onion.addCallbacks(save_key)
+                d_onion.addCallback(save_key)
 
-            d_onion.addCallbacks(finish, errback)
+            d_onion.addCallback(finish)
 
         if launch_tor:
             self._ui.notify_bootstrap(
@@ -663,7 +660,8 @@ class Peer(object):
                                           self._port_tor_control)
             d_process = txtorcon.connect(self._twisted_reactor, endpoint)
 
-        d_process.addCallbacks(add_onion, errback)
+        d_process.addCallback(add_onion)
+        d_process.addErrback(d_tor.errback)
 
         return d_tor
 
