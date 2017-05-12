@@ -895,13 +895,10 @@ class Peer(object):
                 notifications.UnmessageNotification(title='Peer started',
                                                     message=str(result)))
 
-        def peer_failed(reason):
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Peer failed'))
-
-            self._ui.notify_peer_failed(
-                notifications.UnmessageNotification(title='Peer failed',
-                                                    message=str(reason)))
+        def peer_failed(failure):
+            self._ui.notify_peer_failed(notifications.UnmessageNotification(
+                title='Peer failed',
+                message=failure.getErrorMessage()))
 
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
