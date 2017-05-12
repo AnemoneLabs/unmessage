@@ -5,6 +5,13 @@ class UnmessageError(Exception):
         self.message = message
 
 
+class UntalkError(UnmessageError):
+    def __init__(self, message, title=None):
+        super(UntalkError, self).__init__(
+            message,
+            title or 'unTalk error')
+
+
 class ConnectionLostError(UnmessageError):
     def __init__(self, contact):
         super(ConnectionLostError, self).__init__(
@@ -14,7 +21,7 @@ class ConnectionLostError(UnmessageError):
 
 class CorruptedPacketError(UnmessageError):
     def __init__(self, packet_type):
-        super(MalformedPacketError, self).__init__(
+        super(CorruptedPacketError, self).__init__(
             title='Corrupted packet error',
             message='The packet integrity check failed')
 
@@ -26,12 +33,29 @@ class CursesScreenResizedError(UnmessageError):
             message='The curses screen has been resized')
 
 
-class HostUnreachableError(UnmessageError):
+class OfflinePeerError(UnmessageError):
+    def __init__(self, title, contact, is_request=False):
+        message = "{} is offline".format(contact)
+        if is_request:
+            message += ' or such Onion Service does not exist'
+
+        super(OfflinePeerError, self).__init__(
+            title=title,
+            message=message)
+
+
+class InvalidIdentityError(UnmessageError):
     def __init__(self):
-        super(HostUnreachableError, self).__init__(
-            title='Host unreachable',
-            message="The other party's Onion Service is not online or has not "
-                    'been established yet - try again in a minute')
+        super(InvalidIdentityError, self).__init__(
+            title='Value error',
+            message='The identity provided is not valid')
+
+
+class InvalidPublicKeyError(UnmessageError):
+    def __init__(self):
+        super(InvalidPublicKeyError, self).__init__(
+            title='Value error',
+            message='The public key provided is not valid')
 
 
 class InvalidNameError(UnmessageError):

@@ -31,7 +31,7 @@ Features
 .. _`cryptully`: https://github.com/shanet/Cryptully
 .. _`curses`: https://docs.python.org/2/library/curses.html
 .. _`double ratchet algorithm`: https://whispersystems.org/docs/specifications/doubleratchet
-.. _`pyaxo`: https://github.com/anemonelabs/pyaxo
+.. _`pyaxo`: https://github.com/rxcomm/pyaxo
 .. _`pynacl`: https://github.com/pyca/pynacl
 .. _`socialist millionaire protocol`: https://en.wikipedia.org/wiki/Socialist_millionaire
 .. _`tkinter`: https://docs.python.org/2/library/tkinter.html

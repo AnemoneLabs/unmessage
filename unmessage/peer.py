@@ -11,7 +11,6 @@ from threading import Event, Lock, Thread
 
 import pyaxo
 import pyperclip
-import txsocksx.errors
 import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
@@ -29,8 +28,9 @@ from . import errors
 from . import notifications
 from . import packets
 from . import requests
+from . import untalk
 from .contact import Contact
-from .elements import RequestElement, PresenceElement
+from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
 from .utils import Address
@@ -52,59 +52,15 @@ TIMEOUT = 30
 HOST = '127.0.0.1'
 PORT = 50000
 
-TOR_PORT = 9054
+TOR_SOCKS_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
-class _ConversationFactory(Factory):
-    def __init__(self, peer, connection_made):
-        self.peer = peer
-        self.connection_made = connection_made
-
-    def buildProtocol(self, addr):
-        return _ConversationProtocol(self, self.connection_made)
-
-    def notify_error(self, error):
-        self.peer._ui.notify_error(error)
-
-
-class _ConversationProtocol(NetstringReceiver):
-    def __init__(self, factory, connection_made):
-        self.factory = factory
-        self.connection_made = connection_made
-        self.manager = None
-
-    def connectionMade(self):
-        self.connection_made(self)
-
-    def add_manager(self, manager):
-        self.manager = manager
-
-    def remove_manager(self):
-        self.manager = None
-        self.transport.loseConnection()
-
-    def connectionLost(self, reason):
-        if self.manager:
-            # the other party disconnected cleanly without sending a presence
-            # element or the connection was actually lost
-            # TODO check the different reasons and act accordingly?
-            # TODO consider a connection that never had a manager?
-            self.manager.notify_disconnect()
-
-    def stringReceived(self, string):
-        try:
-            self.manager.queue_in_data.put(string)
-        except AttributeError:
-            self.factory.notify_error(
-                errors.TransportError(
-                    message='Packet received without a manager'))
-
-    def send(self, string):
-        self.sendString(string)
-
-
 class Peer(object):
+    state_created = 'created'
+    state_running = 'running'
+    state_stopped = 'stopped'
+
     def __init__(self, name, ui=None):
         if not name:
             raise errors.InvalidNameError()
@@ -119,13 +75,13 @@ class Peer(object):
         self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
 
-        self._port_tor = TOR_PORT
+        self._tor = None
+        self._onion_service = None
+        self._port_tor_socks = TOR_SOCKS_PORT
         self._port_tor_control = TOR_CONTROL_PORT
 
+        self._ip_local_server = HOST
         self._local_mode = False
-        self._use_tor_proxy = True
-
-        self._tor_config = None
 
         self._twisted_reactor = reactor
         self._twisted_server_endpoint = None
@@ -139,6 +95,8 @@ class Peer(object):
         self._event_stop = Event()
 
         self._ui = ui or PeerUi()
+
+        self._state = Peer.state_created
 
     @property
     def _path_peer_dir(self):
@@ -181,16 +139,20 @@ class Peer(object):
         self._info.name = name
 
     @property
+    def onion_service_key(self):
+        return self._info.onion_service_key
+
+    @onion_service_key.setter
+    def _onion_service_key(self, onion_service_key):
+        self._info.onion_service_key = onion_service_key
+
+    @property
     def address(self):
         try:
-            onion_server = open(os.path.join(
-                self._path_onion_service_dir, 'hostname'), 'r').read().strip()
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                onion_server = 'hostname-not-found'
-            else:
-                raise
-        return Address(onion_server, self._port_local_server)
+            onion_domain = self._onion_service.hostname
+        except AttributeError:
+            onion_domain = 'hostname-not-found'
+        return Address(onion_domain, self._port_local_server)
 
     @property
     def port_local_server(self):
@@ -228,6 +190,10 @@ class Peer(object):
     @property
     def outbound_requests(self):
         return self._outbound_requests.values()
+
+    @property
+    def is_running(self):
+        return self._state == Peer.state_running
 
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
@@ -292,18 +258,14 @@ class Peer(object):
         return manager
 
     def _connect(self, address, callback, errback):
-        if self._use_tor_proxy:
+        if self._local_mode:
+            point = TCP4ClientEndpoint(self._twisted_reactor,
+                                       host=HOST, port=address.port)
+
+        else:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
-                                      socks_port=self._port_tor)
-        else:
-            if self._local_mode:
-                host = HOST
-            else:
-                host = address.host
-
-            point = TCP4ClientEndpoint(self._twisted_reactor,
-                                       host=host, port=address.port)
+                                      socks_port=self._port_tor_socks)
 
         def connect_from_thread():
             d = connectProtocol(point,
@@ -468,30 +430,49 @@ class Peer(object):
                               callback=element_sent,
                               errback=element_not_sent)
 
+        def connection_failed(failure):
+            if packet.type_ != PresenceElement.type_:
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    conversation.ui.notify_offline(
+                        errors.OfflinePeerError(
+                            title=failure.getErrorMessage(),
+                            contact=conversation.contact.name))
+                else:
+                    conversation.ui.notify_error(errors.UnmessageError(
+                        title='Conversation connection failed',
+                        message=str(failure)))
+
+        def connect(connection_made):
+            self._connect(conversation.contact.address,
+                          callback=connection_made,
+                          errback=connection_failed)
+
         if conversation.is_active:
-            send_with_manager(conversation)
+            if packet.type_ in elements.REGULAR_ELEMENT_TYPES:
+                send_with_manager(conversation)
+            else:
+                manager = conversation._get_manager(packet.type_)
+                if not manager.connection:
+                    def connection_made(connection):
+                        manager = conversation.add_connection(connection,
+                                                              packet.type_)
+                        send_with_manager(manager)
+
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
+                    connect(connection_made)
+                else:
+                    send_with_manager(manager)
         else:
             def connection_made(connection):
                 conversation.set_active(connection, Conversation.state_conv)
                 send_with_manager(conversation)
 
-            def connection_failed(failure):
-                if packet.type_ != PresenceElement.type_:
-                    if failure.check(txsocksx.errors.HostUnreachable,
-                                     txsocksx.errors.TTLExpired):
-                        conversation.ui.notify_offline(
-                            errors.HostUnreachableError())
-                    else:
-                        conversation.ui.notify_error(errors.UnmessageError(
-                            title='Conversation connection failed',
-                            message=str(failure)))
-
             # the peer connects to the other one to resume a conversation
-            self._connect(conversation.contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
+            connect(connection_made)
 
-    def _receive_packet(self, packet, conversation):
+    def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
 
         Unwrap the element packet with decryption, process it and parse the
@@ -508,7 +489,7 @@ class Peer(object):
                 conversation=conversation,
                 sender=conversation.contact.name,
                 receiver=self.name)
-            self._element_parser.parse(element, conversation)
+            self._element_parser.parse(element, conversation, connection)
 
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
@@ -577,13 +558,13 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
-    def _start_server(self, start_tor_socks, start_onion_server):
+    def _start_server(self, launch_tor):
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Configuring local server'))
 
         endpoint = TCP4ServerEndpoint(self._twisted_reactor,
                                       self._port_local_server,
-                                      interface=HOST)
+                                      interface=self._ip_local_server)
         self._twisted_server_endpoint = endpoint
 
         d = Deferred()
@@ -592,11 +573,11 @@ class Peer(object):
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification('Running local server'))
 
-            d_tor = self._config_tor(start_tor_socks, start_onion_server)
-            if d_tor:
-                d_tor.addCallbacks(d.callback, d.errback)
+            if self._local_mode:
+                d.callback(None)
             else:
-                d.callback(port)
+                d_tor = self._start_tor(launch_tor)
+                d_tor.addCallbacks(d.callback, d.errback)
 
         self._twisted_factory = _ConversationFactory(
             peer=self,
@@ -615,62 +596,92 @@ class Peer(object):
 
         return d
 
-    def _config_tor(self, start_tor_socks, start_onion_server):
-        if start_tor_socks or start_onion_server:
+    def _start_tor(self, launch_tor):
+        d_tor = Deferred()
+
+        def finish(result):
             self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Configuring Tor'))
+                notifications.UnmessageNotification(
+                    'Added Onion Service to Tor'))
 
-            config = txtorcon.TorConfig()
-            config.DataDirectory = self._path_tor_data_dir
-            config.ControlPort = self._port_tor_control
+            d_tor.callback(result)
 
-            if start_tor_socks:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Tor SOCKS port'))
+        def add_onion(tor):
+            self._tor = tor
 
-                config.SocksPort = self._port_tor
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Controlling Tor process'))
+
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification(
+                    'Waiting for the Onion Service'))
+
+            onion_service_string = '{} {}:{}'.format(self._port_local_server,
+                                                     self._ip_local_server,
+                                                     self._port_local_server)
+            if self.onion_service_key:
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string],
+                    self.onion_service_key)
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
             else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Tor SOCKS port"))
+                def save_key(result):
+                    self._onion_service_key = self._onion_service.private_key
 
-            if start_onion_server:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        'Configuring Onion Service'))
+                self._onion_service = txtorcon.EphemeralHiddenService(
+                    [onion_service_string])
+                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
+                d_onion.addCallback(save_key)
 
-                config.HiddenServices = [
-                    txtorcon.HiddenService(
-                        config,
-                        self._path_onion_service_dir,
-                        ['{} {}:{}'.format(self._port_local_server,
-                                           HOST,
-                                           self._port_local_server)]
-                    )
-                ]
-            else:
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        "Using the system's Onion Service"))
+            d_onion.addCallback(finish)
 
-            config.save()
-
-            self._tor_config = config
+        if launch_tor:
+            self._ui.notify_bootstrap(
+                notifications.UnmessageNotification('Launching Tor'))
 
             def display_bootstrap_lines(prog, tag, summary):
                 self._ui.notify_bootstrap(
                     notifications.UnmessageNotification(
                         '{}%: {}'.format(prog, summary)))
 
-            return txtorcon.launch_tor(
-                config, self._twisted_reactor,
-                progress_updates=display_bootstrap_lines)
+            d_process = txtorcon.launch(
+                self._twisted_reactor,
+                progress_updates=display_bootstrap_lines,
+                data_directory=self._path_tor_data_dir,
+                socks_port=self._port_tor_socks)
         else:
             self._ui.notify_bootstrap(
                 notifications.UnmessageNotification(
-                    "Using the system's Tor SOCKS port and Onion Service"))
-            return None
+                    'Connecting to existing Tor'))
+
+            endpoint = TCP4ClientEndpoint(self._twisted_reactor,
+                                          HOST,
+                                          self._port_tor_control)
+            d_process = txtorcon.connect(self._twisted_reactor, endpoint)
+
+        d_process.addCallback(add_onion)
+        d_process.addErrback(d_tor.errback)
+
+        return d_tor
+
+    def _stop_tor(self):
+        if self._onion_service:
+            self._ui.notify(
+                notifications.UnmessageNotification(
+                    'Removing Onion Service from Tor'))
+
+            e = Event()
+
+            def removed(result):
+                self._ui.notify(
+                    notifications.UnmessageNotification(
+                        'Removed Onion Service from Tor'))
+                e.set()
+
+            d = self._onion_service.remove_from_tor(self._tor._protocol)
+            d.addCallback(removed)
+            e.wait()
 
     def _send_request(self, identity, key):
         result = re.match(r'[^@]+@[^:]+(:(\d+))?$', identity)
@@ -678,47 +689,55 @@ class Peer(object):
         if not port:
             identity += ':' + str(PORT)
 
-        contact = Contact(identity, key)
-        req = self._create_request(contact)
+        try:
+            contact = Contact(identity, key)
+        except (errors.InvalidIdentityError,
+                errors.InvalidPublicKeyError) as e:
+            self._ui.notify_error(e)
+        else:
+            req = self._create_request(contact)
 
-        def connection_made(connection):
-            def request_sent():
-                self._outbound_requests[contact.identity] = req
-                self._ui.notify_out_request(
-                    notifications.ContactNotification(
-                        contact,
-                        title='Request sent',
-                        message='{} has received your request'.format(
-                            identity)))
+            def connection_made(connection):
+                def request_sent():
+                    self._outbound_requests[contact.identity] = req
+                    self._ui.notify_out_request(
+                        notifications.ContactNotification(
+                            contact,
+                            title='Request sent',
+                            message='{} has received your request'.format(
+                                identity)))
 
-            def request_failed(failure):
-                # TODO handle expected errors and display better messages
-                self._ui.notify_error(errors.UnmessageError(
-                    title='Request packet failed',
-                    message=str(failure)))
+                def request_failed(failure):
+                    # TODO handle expected errors and display better messages
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request packet failed',
+                        message=str(failure)))
 
-            conv = req.conversation
-            conv.start()
-            conv.set_active(connection, Conversation.state_out_req)
+                conv = req.conversation
+                conv.start()
+                conv.set_active(connection, Conversation.state_out_req)
 
-            # pack the ``RequestPacket`` into a ``str`` and send it to the
-            # other peer
-            conv.send_data(str(req.packet),
-                           callback=request_sent,
-                           errback=request_failed)
+                # pack the ``RequestPacket`` into a ``str`` and send it to the
+                # other peer
+                conv.send_data(str(req.packet),
+                               callback=request_sent,
+                               errback=request_failed)
 
-        def connection_failed(failure):
-            if failure.check(txsocksx.errors.HostUnreachable,
-                             txsocksx.errors.TTLExpired):
-                self._ui.notify_error(errors.HostUnreachableError())
-            else:
-                self._ui.notify_error(errors.UnmessageError(
-                    title='Request connection failed',
-                    message=str(failure)))
+            def connection_failed(failure):
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    self._ui.notify_error(errors.OfflinePeerError(
+                        title=failure.getErrorMessage(),
+                        contact=contact.name,
+                        is_request=True))
+                else:
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request connection failed',
+                        message=str(failure)))
 
-        self._connect(contact.address,
-                      callback=connection_made,
-                      errback=connection_failed)
+            self._connect(contact.address,
+                          callback=connection_made,
+                          errback=connection_failed)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
@@ -741,6 +760,43 @@ class Peer(object):
                            RequestElement.type_,
                            content=RequestElement.request_accepted,
                            handshake_key=handshake_keys.pub)
+
+    def _untalk(self, conversation, input_device=None, output_device=None):
+        if conversation.is_active:
+            if self._can_talk(conversation):
+                untalk_session = (conversation.untalk_session or
+                                  conversation.init_untalk())
+                if untalk_session.is_talking:
+                    conversation.stop_untalk()
+                else:
+                    try:
+                        untalk_session.configure(input_device, output_device)
+                    except untalk.AudioDeviceNotFoundError as e:
+                        conversation.remove_manager(untalk_session)
+                        self._ui.notify_error(e)
+                    else:
+                        self._send_element(
+                            conversation,
+                            UntalkElement.type_,
+                            content=b2a(untalk_session.handshake_keys.pub))
+            else:
+                self._ui.notify_error(errors.UntalkError(
+                    message='You can only make one voice conversation at a '
+                            'time'))
+        else:
+            # TODO automatically connect and send request
+            self._ui.notify_error(errors.UntalkError(
+                message='You must be connected to {} in order to start a '
+                        'conversation'.format(conversation.contact.name)))
+
+    def _can_talk(self, conversation):
+        for c in self.conversations:
+            try:
+                if c.untalk_session.is_talking and c is not conversation:
+                    return False
+            except AttributeError:
+                continue
+        return True
 
     def _send_message(self, conversation, plaintext):
         self._send_element(conversation,
@@ -790,17 +846,14 @@ class Peer(object):
                 message='A copy/paste mechanism for your system could not be '
                         'found'))
 
-    def start(self, local_server_port=None,
-              start_tor_socks=True,
-              use_tor_proxy=True,
-              tor_port=None,
-              start_onion_server=True,
+    def start(self, local_server_ip=None,
+              local_server_port=None,
+              launch_tor=True,
+              tor_socks_port=None,
               tor_control_port=None,
               local_mode=False):
         if local_mode:
-            start_tor_socks = False
-            use_tor_proxy = False
-            start_onion_server = False
+            launch_tor = False
             self._local_mode = local_mode
         self._ui.notify_bootstrap(
             notifications.UnmessageNotification('Starting peer'))
@@ -809,11 +862,12 @@ class Peer(object):
         self._load_peer_info()
         self._update_config()
 
+        if local_server_ip:
+            self._ip_local_server = local_server_ip
         if local_server_port:
             self._port_local_server = int(local_server_port)
-        self._use_tor_proxy = use_tor_proxy
-        if tor_port:
-            self._port_tor = int(tor_port)
+        if tor_socks_port:
+            self._port_tor_socks = int(tor_socks_port)
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
 
@@ -832,6 +886,8 @@ class Peer(object):
             for c in self.conversations:
                 c.start()
 
+            self._state = Peer.state_running
+
             self._send_presence()
 
             # TODO maybe return something useful to the UI?
@@ -839,18 +895,15 @@ class Peer(object):
                 notifications.UnmessageNotification(title='Peer started',
                                                     message=str(result)))
 
-        def peer_failed(reason):
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Peer failed'))
-
-            self._ui.notify_peer_failed(
-                notifications.UnmessageNotification(title='Peer failed',
-                                                    message=str(reason)))
+        def peer_failed(failure):
+            self._ui.notify_peer_failed(notifications.UnmessageNotification(
+                title='Peer failed',
+                message=failure.getErrorMessage()))
 
         def errback(reason):
             self._ui.notify_error(errors.UnmessageError(str(reason)))
 
-        d = self._start_server(start_tor_socks, start_onion_server)
+        d = self._start_server(launch_tor)
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
@@ -864,12 +917,21 @@ class Peer(object):
         for c in self.conversations:
             c.close()
 
+        self._stop_tor()
+
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
+        self._state = Peer.state_stopped
+
     def send_request(self, identity, key):
-        t = Thread(target=self._send_request, args=(identity, a2b(key),))
-        t.daemon = True
-        t.start()
+        try:
+            key_bytes = a2b(key)
+        except TypeError:
+            raise errors.InvalidPublicKeyError()
+        else:
+            t = Thread(target=self._send_request, args=(identity, key_bytes,))
+            t.daemon = True
+            t.start()
 
     def accept_request(self, identity, new_name=None):
         request = self._inbound_requests.pop(identity)
@@ -892,6 +954,16 @@ class Peer(object):
         else:
             contact.is_verified = False
             raise errors.VerificationError(name)
+
+    def get_audio_devices(self):
+        return untalk.get_audio_devices()
+
+    def untalk(self, name, input_device=None, output_device=None):
+        t = Thread(target=self._untalk,
+                   args=(self.get_conversation(name),
+                         input_device, output_device,))
+        t.daemon = True
+        t.start()
 
     def send_message(self, name, plaintext):
         t = Thread(target=self._send_message,
@@ -919,10 +991,13 @@ class Introduction(Thread):
         self.connection.add_manager(self)
 
     def run(self):
-        data = self.queue_in_data.get()
+        data, _ = self.queue_in_data.get()
         try:
             self.handle_introduction_data(data)
-        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
+        except (errors.MalformedPacketError,
+                errors.CorruptedPacketError,
+                errors.InvalidIdentityError,
+                errors.InvalidPublicKeyError) as e:
             e.title += ' caused by an unknown peer'
             self.peer._ui.notify_error(e)
             self.connection.remove_manager()
@@ -940,8 +1015,9 @@ class Introduction(Thread):
                 # users, so the current connection must be added to the
                 # conversation, a manager must be started and then
                 # receive the packet using the existing conversation
-                conv.set_active(self.connection, Conversation.state_conv)
-                conv.queue_in_data.put(data)
+                if not conv.is_active:
+                    conv.set_active(self.connection, Conversation.state_conv)
+                conv.queue_in_data.put([data, self.connection])
                 break
         else:
             # the database does not have a conversation between the
@@ -985,6 +1061,7 @@ class Conversation(object):
         self.axolotl = axolotl
         self.auth_session = None
 
+        self._managers = dict()
         self.connection = connection
         self.queue_in_data = Queue()
         self.queue_out_data = Queue()
@@ -1019,12 +1096,33 @@ class Conversation(object):
             # the session has not been initialized
             return None
 
+    @property
+    def untalk_session(self):
+        return self._get_manager(elements.UntalkElement.type_)
+
+    @untalk_session.setter
+    def _untalk_session(self, manager):
+        self._set_manager(manager, elements.UntalkElement.type_)
+
+    def _get_manager(self, type_):
+        try:
+            return self._managers[type_]
+        except KeyError:
+            return None
+
+    def _set_manager(self, manager, type_):
+        self._managers[type_] = manager
+
+    def remove_manager(self, manager):
+        manager.stop()
+        del self._managers[manager.type_]
+
     def check_in_data(self):
         while True:
-            data = self.queue_in_data.get()
+            data, connection = self.queue_in_data.get()
             try:
                 method = getattr(self, 'handle_{}_data'.format(self.state))
-                method(data)
+                method(data, connection)
             except AttributeError:
                 # the state does not have a "handle" method, which currently is
                 # state_in_req because it should be waiting for the request to
@@ -1061,11 +1159,11 @@ class Conversation(object):
     def send_data(self, data, callback, errback):
         self.queue_out_data.put([data, callback, errback])
 
-    def handle_conv_data(self, data):
+    def handle_conv_data(self, data, connection):
         packet = packets.build_regular_packet(data)
-        self.queue_in_packets.put([packet, self])
+        self.queue_in_packets.put([packet, connection, self])
 
-    def handle_out_req_data(self, data):
+    def handle_out_req_data(self, data, connection):
         packet = packets.build_reply_packet(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
@@ -1075,7 +1173,7 @@ class Conversation(object):
             enc_handshake_key + a2b(packet.payload))
 
         if payload_hash == a2b(packet.payload_hash):
-            # the regular packet provides a handshake key, making it possible
+            # the reply packet provides a handshake key, making it possible
             # to do a Triple Diffie-Hellman handshake and create an Axolotl
             # state
             try:
@@ -1102,7 +1200,15 @@ class Conversation(object):
         self.state = state
         self.is_active = True
 
+    def add_connection(self, connection, type_):
+        manager = self._get_manager(type_)
+        manager.connection = connection
+        connection.add_manager(manager, type_)
+        return manager
+
     def close(self):
+        for m in self._managers.values():
+            self.remove_manager(m)
         if self.connection:
             self.connection.remove_manager()
             self.connection = None
@@ -1110,13 +1216,24 @@ class Conversation(object):
         self.is_active = False
 
     def notify_disconnect(self):
-        self.connection = None
-        self.auth_session = None
         if self.is_active:
             self.ui.notify_disconnect(
                 notifications.UnmessageNotification(
                     '{} has disconnected'.format(self.contact.name)))
-            self.is_active = False
+        self.connection = None
+        self.close()
+
+    def init_untalk(self, connection=None, other_handshake_key=None):
+        self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
+        if connection:
+            self.add_connection(connection, elements.UntalkElement.type_)
+        return self.untalk_session
+
+    def start_untalk(self, other_handshake_key=None):
+        self.untalk_session.start(other_handshake_key)
+
+    def stop_untalk(self):
+        self.remove_manager(self.untalk_session)
 
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
@@ -1192,7 +1309,32 @@ class ElementParser:
     def __init__(self, peer):
         self.peer = peer
 
-    def _parse_pres_element(self, element, conversation):
+    def _parse_untalk_element(self, element, conversation, connection=None):
+        message = None
+        if conversation.untalk_session:
+            if element.sender == self.peer.name:
+                if (conversation.untalk_session.state ==
+                        untalk.UntalkSession.state_sent):
+                    message = 'voice conversation request sent to {}'
+                else:
+                    # this peer has accepted the request
+                    conversation.start_untalk()
+            elif (conversation.untalk_session.state ==
+                    untalk.UntalkSession.state_sent):
+                # the other peer has accepted the request
+                conversation.start_untalk(
+                    other_handshake_key=a2b(str(element)))
+        elif element.receiver == self.peer.name:
+                message = '{} wishes to start a voice conversation'
+                conversation.init_untalk(connection,
+                                         other_handshake_key=a2b(str(element)))
+
+        if message:
+            conversation.ui.notify(
+                notifications.UntalkNotification(
+                    message.format(conversation.contact.name)))
+
+    def _parse_pres_element(self, element, conversation, connection=None):
         if str(element) == PresenceElement.status_online:
             conversation.ui.notify_online(
                 notifications.UnmessageNotification(
@@ -1210,11 +1352,11 @@ class ElementParser:
                     notifications.UnmessageNotification(
                         '{} is offline'.format(conversation.contact.name)))
 
-    def _parse_msg_element(self, element, conversation):
+    def _parse_msg_element(self, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
 
-    def _parse_auth_element(self, element, conversation):
+    def _parse_auth_element(self, element, conversation, connection=None):
         if element.sender == self.peer.name:
             if conversation.auth_session.is_waiting:
                 conversation.ui.notify_out_authentication(
@@ -1255,7 +1397,7 @@ class ElementParser:
                         message=message.format(
                             conversation.contact.name)))
 
-    def parse(self, element, conversation):
+    def parse(self, element, conversation, connection=None):
         if element.is_complete:
             # it can be parsed as all parts have been added to the ``Element``
             # or it is composed of a single part
@@ -1266,18 +1408,79 @@ class ElementParser:
                 # TODO handle elements with unknown types
                 pass
             else:
-                method(element, conversation)
+                method(element, conversation, connection)
         else:
             # the ``Element`` has parts yet to be transmitted (sent/received)
             pass
 
 
+class _ConversationFactory(Factory):
+    def __init__(self, peer, connection_made):
+        self.peer = peer
+        self.connection_made = connection_made
+
+    def buildProtocol(self, addr):
+        return _ConversationProtocol(self, self.connection_made)
+
+    def notify_error(self, error):
+        self.peer._ui.notify_error(error)
+
+
+class _ConversationProtocol(NetstringReceiver):
+    type_regular = 'reg'
+    type_untalk = elements.UntalkElement.type_
+
+    def __init__(self, factory, connection_made):
+        self.factory = factory
+        self.connection_made = connection_made
+        self.manager = None
+        self.type_ = None
+
+    def connectionMade(self):
+        self.connection_made(self)
+
+    def add_manager(self, manager, type_=None):
+        self.manager = manager
+        self.type_ = type_ or _ConversationProtocol.type_regular
+
+    def remove_manager(self):
+        self.manager = None
+        self.transport.loseConnection()
+
+    def connectionLost(self, reason):
+        if self.manager:
+            # the other party disconnected cleanly without sending a presence
+            # element or the connection was actually lost
+            # TODO check the different reasons and act accordingly?
+            # TODO consider a connection that never had a manager?
+            self.manager.notify_disconnect()
+
+    def stringReceived(self, string):
+        try:
+            if self.type_ == _ConversationProtocol.type_regular:
+                self.manager.queue_in_data.put([string, self])
+            elif self.type_ == _ConversationProtocol.type_untalk:
+                self.manager.receive_data(string)
+            else:
+                self.factory.notify_error(errors.UnmessageError(
+                    title='Connection of unknown type',
+                    message=str(self.type_)))
+        except AttributeError:
+            self.factory.notify_error(
+                errors.TransportError(
+                    message='Packet received without a manager'))
+
+    def send(self, string):
+        self.sendString(string)
+
+
 class PeerInfo:
     def __init__(self, name=None, port_local_server=None, identity_keys=None,
-                 contacts=None):
+                 onion_service_key=None, contacts=None):
         self.name = name
         self.port_local_server = port_local_server
         self.identity_keys = identity_keys
+        self.onion_service_key = onion_service_key
         self.contacts = contacts or dict()
 
 
@@ -1310,7 +1513,8 @@ class Persistence:
                     name TEXT,
                     port_local_server INTEGER,
                     priv_identity_key TEXT,
-                    pub_identity_key TEXT)''')
+                    pub_identity_key TEXT,
+                    onion_service_key TEXT)''')
         db.execute('''
             CREATE UNIQUE INDEX IF NOT EXISTS
                 peer_name
@@ -1345,11 +1549,13 @@ class Persistence:
                     peer''')
             row = cur.fetchone()
         if row:
+            onion_service_key = row['onion_service_key']
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
             port_local_server = int(row['port_local_server'])
             name = str(row['name'])
         else:
+            onion_service_key = None
             identity_keys = None
             port_local_server = None
             name = None
@@ -1368,7 +1574,8 @@ class Persistence:
                         bool(row['has_presence']))
             contacts[c.name] = c
 
-        return PeerInfo(name, port_local_server, identity_keys, contacts)
+        return PeerInfo(name, port_local_server, identity_keys,
+                        onion_service_key, contacts)
 
     def save_peer_info(self, peer_info):
         with self.db as db:
@@ -1382,12 +1589,14 @@ class Persistence:
                             name,
                             port_local_server,
                             priv_identity_key,
-                            pub_identity_key)
-                    VALUES (?, ?, ?, ?)''', (
+                            pub_identity_key,
+                            onion_service_key)
+                    VALUES (?, ?, ?, ?, ?)''', (
                         peer_info.name,
                         peer_info.port_local_server,
                         b2a(peer_info.identity_keys.priv),
-                        b2a(peer_info.identity_keys.pub)))
+                        b2a(peer_info.identity_keys.pub),
+                        peer_info.onion_service_key))
             db.execute('''
                 DELETE FROM
                     contacts''')

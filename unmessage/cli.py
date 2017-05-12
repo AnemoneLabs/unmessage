@@ -53,9 +53,17 @@ COMMANDS = {
                  ''],
     '/reqs-out': ['display outbound requests',
                   ''],
+    '/untalk': ['send or accept a request to talk with a peer using voice',
+                '<peer_name> [<input_device_index> <output_device_index>]'],
+    '/untalk-devices': ['display audio devices available',
+                        ''],
     '/verify': ["verify a peer's identity key",
                 '<peer_name> <identity_key>'],
 }
+NOT_RUNNING_COMMANDS = [
+    '/help',
+    '/quit',
+]
 
 RED = 1
 GREEN = 2
@@ -192,11 +200,10 @@ class Cli(PeerUi):
         window.clear()
 
     def start(self, name,
+              local_server_ip=None,
               local_server_port=None,
-              start_tor_socks=True,
-              use_tor_proxy=True,
-              tor_port=None,
-              start_onion_server=True,
+              launch_tor=True,
+              tor_socks_port=None,
               tor_control_port=None,
               remote_mode=False,
               local_mode=False):
@@ -209,11 +216,10 @@ class Cli(PeerUi):
         else:
             curses.wrapper(self.start_main,
                            name,
+                           local_server_ip,
                            local_server_port,
-                           start_tor_socks,
-                           use_tor_proxy,
-                           tor_port,
-                           start_onion_server,
+                           launch_tor,
+                           tor_socks_port,
                            tor_control_port,
                            local_mode)
 
@@ -226,19 +232,17 @@ class Cli(PeerUi):
         self.display_str(self.help_info)
 
     def init_peer(self, name,
+                  local_server_ip,
                   local_server_port,
-                  start_tor_socks,
-                  use_tor_proxy,
-                  tor_port,
-                  start_onion_server,
+                  launch_tor,
+                  tor_socks_port,
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
-        self.peer.start(local_server_port,
-                        start_tor_socks,
-                        use_tor_proxy,
-                        tor_port,
-                        start_onion_server,
+        self.peer.start(local_server_ip,
+                        local_server_port,
+                        launch_tor,
+                        tor_socks_port,
                         tor_control_port,
                         local_mode)
 
@@ -278,7 +282,10 @@ class Cli(PeerUi):
         self.peer.copy_peer()
 
     def send_request(self, identity, key):
-        self.peer.send_request(identity, key)
+        try:
+            self.peer.send_request(identity, key)
+        except errors.InvalidPublicKeyError as e:
+            self.display_attention(e.message, e.title, error=True)
 
     def notify_in_request(self, notification):
         cmd = '/req-accept'
@@ -347,6 +354,22 @@ class Cli(PeerUi):
                 self.active_conv = conv
                 self.peer.send_message(name, message)
 
+    def untalk(self, name, input_device=None, output_device=None):
+        try:
+            self.peer.untalk(name, input_device, output_device)
+        except errors.UnknownContactError as e:
+            self.display_attention(e.message)
+
+    def display_audio_devices(self):
+        devices = self.peer.get_audio_devices()
+        if devices:
+            output = ['Audio devices:']
+            for name, index in devices.items():
+                output.append('\tDevice {} has index {}'.format(name, index))
+        else:
+            output = ['There are no audio devices available']
+        self.display_info('\n'.join(output))
+
     def verify_contact(self, name, key):
         try:
             self.peer.verify_contact(name, key)
@@ -370,7 +393,8 @@ class Cli(PeerUi):
             self.display_attention(e.message)
         else:
             self.display_info(
-                'You will start sending your presence to ' + name,
+                'You have {} sending your presence to {}'.format(
+                    'started' if enable else 'stopped', name),
                 success=True)
 
     def authenticate(self, name, secret):
@@ -381,11 +405,10 @@ class Cli(PeerUi):
 
     def start_main(self, stdscr,
                    name,
+                   local_server_ip,
                    local_server_port,
-                   start_tor_socks,
-                   use_tor_proxy,
-                   tor_port,
-                   start_onion_server,
+                   launch_tor,
+                   tor_socks_port,
                    tor_control_port,
                    local_mode):
         self.curses_helper = CursesHelper(stdscr, ui=self)
@@ -395,11 +418,10 @@ class Cli(PeerUi):
 
         try:
             self.init_peer(name,
+                           local_server_ip,
                            local_server_port,
-                           start_tor_socks,
-                           use_tor_proxy,
-                           tor_port,
-                           start_onion_server,
+                           launch_tor,
+                           tor_socks_port,
                            tor_control_port,
                            local_mode)
         except errors.UnmessageError as e:
@@ -417,7 +439,13 @@ class Cli(PeerUi):
                 else:
                     command, args = self.parse_data(data)
                     if command:
-                        self.make_call(command, args)
+                        if (self.peer.is_running or
+                                command in NOT_RUNNING_COMMANDS):
+                            self.make_call(command, args)
+                        else:
+                            self.display_attention(
+                                'This command can only be called when the '
+                                'peer is running')
         except KeyboardInterrupt:
             pass
         self.stop()
@@ -450,7 +478,8 @@ class Cli(PeerUi):
 
     def parse_data(self, data):
         command = args = None
-        if len(data) > sum_args_len(self.prefix):
+        prefix_len = sum_args_len(self.prefix)
+        if len(data) > prefix_len:
             echo = True
             split_data = data.split()
             try:
@@ -464,8 +493,8 @@ class Cli(PeerUi):
                     # message
                     command = '/msg'
                     name = split_data[0].split(SENDING_SUFFIX)[0]
-                    message = split_data[1:]
-                    args = [name] + message
+                    message = data[prefix_len:]
+                    args = [name, message]
                     echo = False
             except IndexError:
                 # the user modified the prefix
@@ -524,7 +553,7 @@ class Cli(PeerUi):
         self.display_key()
 
     def call_msg(self, name, *words):
-        msg = ' '.join(words).strip()
+        msg = ' '.join(words).rstrip()
         if not msg:
             raise TypeError()
         self.send_message(name, msg)
@@ -556,8 +585,14 @@ class Cli(PeerUi):
     def call_reqs_out(self):
         self.display_out_reqs()
 
+    def call_untalk_devices(self):
+        self.display_audio_devices()
+
     def call_verify(self, name, key):
         self.verify_contact(name, key)
+
+    def call_untalk(self, name, input_device=None, output_device=None):
+        self.untalk(name, input_device, output_device)
 
 
 class _ConversationHandler(ConversationUi):
@@ -582,7 +617,8 @@ class _ConversationHandler(ConversationUi):
         self.update_prefix()
 
     def notify_offline(self, notification):
-        self.cli.display_attention(notification.message)
+        self.cli.display_attention(notification.message,
+                                   notification.title)
         self.update_prefix()
 
     def notify_online(self, notification):
@@ -872,18 +908,16 @@ def main(name=None):
 
     parser.add_argument('-n', '--name',
                         default=name)
+    parser.add_argument('-i', '--local-server-ip',
+                        default=peer.HOST)
     parser.add_argument('-l', '--local-server-port',
                         default=None,
                         type=int)
-    parser.add_argument('--no-tor-socks',
+    parser.add_argument('--connect-to-tor',
                         action='store_false')
-    parser.add_argument('--no-tor-proxy',
-                        action='store_false')
-    parser.add_argument('-t', '--tor-port',
-                        default=peer.TOR_PORT,
+    parser.add_argument('-s', '--tor-socks-port',
+                        default=peer.TOR_SOCKS_PORT,
                         type=int)
-    parser.add_argument('--no-onion-service',
-                        action='store_false')
     parser.add_argument('-c', '--tor-control-port',
                         default=peer.TOR_CONTROL_PORT,
                         type=int)
@@ -896,11 +930,10 @@ def main(name=None):
 
     cli = Cli()
     cli.start(args.name,
+              args.local_server_ip,
               args.local_server_port,
-              args.no_tor_socks,
-              args.no_tor_proxy,
-              args.tor_port,
-              args.no_onion_service,
+              args.connect_to_tor,
+              args.tor_socks_port,
               args.tor_control_port,
               args.remote_mode,
               args.local_mode)

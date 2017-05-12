@@ -4,6 +4,13 @@ class UnmessageNotification(object):
         self.message = message
 
 
+class UntalkNotification(UnmessageNotification):
+    def __init__(self, message, title=None):
+        super(UntalkNotification, self).__init__(
+            message,
+            title or 'unTalk')
+
+
 class ContactNotification(UnmessageNotification):
     def __init__(self, contact, message, title=None):
         super(ContactNotification, self).__init__(

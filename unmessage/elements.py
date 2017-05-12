@@ -23,6 +23,10 @@ class RequestElement:
     request_accepted = 'accepted'
 
 
+class UntalkElement:
+    type_ = 'untalk'
+
+
 class PresenceElement:
     type_ = 'pres'
     status_online = 'online'
@@ -35,6 +39,12 @@ class MessageElement:
 
 class AuthenticationElement:
     type_ = 'auth'
+
+
+REGULAR_ELEMENT_TYPES = [RequestElement.type_,
+                         PresenceElement.type_,
+                         MessageElement.type_,
+                         AuthenticationElement.type_]
 
 
 ID_LENGTH = 2
