@@ -2,7 +2,7 @@
 Changelog
 =========
 
-unMessage 0.2.0, released 2017-05-11
+unMessage 0.2.0, released 2017-05-12
 ====================================
 
 - Support multiple conversation managers
