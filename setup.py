@@ -34,15 +34,11 @@ setup(
     ],
     keywords='messenger privacy anonimity pyaxo axolotl double ratchet tor',
     packages=find_packages(),
-    install_requires=[
-        'opuslib>=1.1.0',
-        'PyAudio>=0.2.10',
-        'pyaxo>=0.7.3',
-        'PyNaCl>=1.0.1',
-        'pyperclip>=1.5.27',
-        'Twisted[tls]>=16.6.0',
-        'txtorcon>=0.19.0',
-    ],
+    install_requires=open('requirements.txt').readlines(),
+    # "pip install -e .[dev]" will install development requirements
+    extras_require=dict(
+        dev=open('requirements-dev.txt').readlines(),
+    ),
     entry_points={
         'console_scripts': [
             'unmessage = unmessage.__main__:main',
