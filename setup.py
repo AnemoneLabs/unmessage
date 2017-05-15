@@ -19,6 +19,7 @@ setup(
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description='Privacy enhanced instant messenger',
+    long_description=open('README.rst', 'r').read(),
     url=__url__,
     author=__author__,
     author_email=__contact__,
