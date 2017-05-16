@@ -9,6 +9,7 @@ from hashlib import sha256
 from Queue import Queue
 from threading import Event, Lock, Thread
 
+import attr
 import pyaxo
 import pyperclip
 import txtorcon
@@ -745,6 +746,7 @@ class Peer(object):
         if new_name:
             address = re.match(r'[^@]+(@[^:]+:\d+)', conv.contact.identity)
             conv.contact.identity = new_name + address.group(1)
+            attr.validate(conv.contact)
 
         handshake_keys = pyaxo.generate_keypair()
         self._init_conv(

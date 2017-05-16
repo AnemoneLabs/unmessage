@@ -1,31 +1,30 @@
 import re
 
+import attr
 from nacl.public import PublicKey
 
 from . import errors
 from .utils import Address
 
 
+@attr.s
 class Contact(object):
-    def __init__(self, identity, key, is_verified=False, has_presence=False):
-        self._identity = None
-        self._key = None
+    identity = attr.ib()
+    key = attr.ib()
+    is_verified = attr.ib(default=False)
+    has_presence = attr.ib(default=False)
 
-        self.identity = identity
-        self.key = key
-        self.is_verified = is_verified
-        self.has_presence = has_presence
-
-    @property
-    def identity(self):
-        return self._identity
-
-    @identity.setter
-    def identity(self, identity):
-        if re.match(r'[a-zA-Z0-9_-]+@[a-z2-7]{16}\.onion:\d+$', identity):
-            self._identity = identity
-        else:
+    @identity.validator
+    def is_valid_identity(self, attribute, value):
+        if not (isinstance(value, str) and
+                re.match(r'[a-zA-Z0-9_-]+@[a-z2-7]{16}\.onion:\d+$', value)):
             raise errors.InvalidIdentityError()
+
+    @key.validator
+    def is_valid_key(self, attribute, value):
+        if not (isinstance(value, bytes) and
+                len(value) == PublicKey.SIZE):
+            raise errors.InvalidPublicKeyError()
 
     @property
     def name(self):
@@ -35,14 +34,3 @@ class Contact(object):
     def address(self):
         host, port = self.identity.split('@')[-1].split(':')
         return Address(host, int(port))
-
-    @property
-    def key(self):
-        return self._key
-
-    @key.setter
-    def key(self, key):
-        if isinstance(key, bytes) and len(key) == PublicKey.SIZE:
-            self._key = key
-        else:
-            raise errors.InvalidPublicKeyError()
