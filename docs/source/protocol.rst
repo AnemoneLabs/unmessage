@@ -3,6 +3,14 @@
 ==================
 unMessage Protocol
 ==================
+This section describes the logic for sending/accepting requests and
+exchanging messages in :ref:`sec-protocol-logic`, as well as the
+packets used in each of those stages in :ref:`sec-protocol-packets`.
+
+.. _sec-protocol-logic:
+
+Establishing Conversations
+==========================
 The unMessage protocol is based on the `Double Ratchet Algorithm`_ to
 establish conversations and exchange messages privately and
 anonymously.
@@ -173,6 +181,184 @@ they are ignored.
     received from Bob.
 
     The **IV hash** is another implementation of an `hSub`_.
+
+.. _sec-protocol-packets:
+
+Packet Formats
+==============
+unMessage's conversations have three stages, each using a different
+packet format:
+
+- **Request:** contains Bob's name, address and keys (identity,
+  handshake and ratchet)
+
+- **Reply:** contains Alice's key (handshake) and optionally an
+  element
+
+- **Regular:** contains an element
+
+.. note::
+
+    **Elements** represent the encrypted information exchanged in
+    unMessage's conversations. (e.g., *presence*, *text*,
+    *authentication*)
+
+The following sections summarize what each packet is used for, their
+exact contents and their size in *bytes*.
+
+*(In the following diagrams, data surrounded by* ``===``
+*is encrypted)*
+
+Request Packet
+--------------
+To notify **Alice** that **Bob** wishes to establish a conversation
+with her, he must send all the information she needs to complete this
+process. The information is sent in a **request packet**:
+
+.. code-block:: text
+
+    +------------------------------------------------+
+    | Request packet (240 + address)                 |
+    +------------------------------------------------+
+    | IV (8)                                         |
+    | IV Hash (32)                                   |
+    | Keyed hash (32)                                |
+    | Public request key (32)                        |
+    |                                                |
+    | +--------------------------------------------+ |
+    | | Encrypted handshake packet (136 + address) | |
+    | +--------------------------------------------+ |
+    | | Nonce (24)                                 | |
+    | | MAC (16)                                   | |
+    | | +========================================+ | |
+    | | | Identity address                       | | |
+    | | | Public identity key (32)               | | |
+    | | | Public handshake key (32)              | | |
+    | | | Public ratchet key (32)                | | |
+    | | +========================================+ | |
+    | +--------------------------------------------+ |
+    +------------------------------------------------+
+
+The **request key** is used to derive a **shared request key** with
+**Alice's** identity key in order to encrypt **Bob**'s information so
+that only the ones in possession of the private **request** or
+**identity** keys are able to read who sent the request.
+
+Reply Packet
+------------
+Once **Alice** accepts the request, she is able to send encrypted
+elements to **Bob**, who sent all information required by her to
+initialize a conversation. However, as **Bob** needs her
+**handshake key**, she adds it before the payload of the message, in
+case an element should also be included. This information is sent in a
+**reply packet**:
+
+
+.. code-block:: text
+
+    +------------------------------------------------+
+    | Reply packet (192 + 72 + payload)              |
+    +------------------------------------------------+
+    | IV (8)                                         |
+    | IV Hash (32)                                   |
+    | Keyed hash (32)                                |
+    |                                                |
+    | +--------------------------------------------+ |
+    | | Encrypted public handshake key (72)        | |
+    | +--------------------------------------------+ |
+    | | Nonce (24)                                 | |
+    | | MAC (16)                                   | |
+    | | +========================================+ | |
+    | | | Public handshake key (32)              | | |
+    | | +========================================+ | |
+    | +--------------------------------------------+ |
+    |                                                |
+    | +--------------------------------------------+ |
+    | | Encrypted payload (120 + payload)          | |
+    | +--------------------------------------------+ |
+    | | +----------------------------------------+ | |
+    | | | Double Ratchet header (80)             | | |
+    | | +----------------------------------------+ | |
+    | | | Nonce (24)                             | | |
+    | | | MAC (16)                               | | |
+    | | | +====================================+ | | |
+    | | | | Ns (3)                             | | | |
+    | | | | PNs (3)                            | | | |
+    | | | | DHRs (32)                          | | | |
+    | | | +====================================+ | | |
+    | | | Padding (2)                            | | |
+    | | +----------------------------------------+ | |
+    | |                                            | |
+    | | +----------------------------------------+ | |
+    | | | Double Ratchet payload (40 + payload)  | | |
+    | | +----------------------------------------+ | |
+    | | | Nonce (24)                             | | |
+    | | | MAC (16)                               | | |
+    | | | +====================================+ | | |
+    | | | | Payload                            | | | |
+    | | | +====================================+ | | |
+    | | +----------------------------------------+ | |
+    | +--------------------------------------------+ |
+    +------------------------------------------------+
+
+In order to send multiple messages to **Bob** (which might be
+delivered out of order), **Alice** must continue to send her
+**handshake key** until **Bob** replies (signaling that he was able to
+establish a conversation as well). To prevent **reply packets** from
+being linked by leaking the **handshake key**, it is encrypted using
+the **shared request key** used in the encryption of the
+**request packet** sent by **Bob**.
+
+Regular Packet
+--------------
+Once both peers have initialized their sides of the conversation,
+there is no need for **Alice** to send the **handshake key** anymore.
+The only content subsequent exchanges transmit are their payloads.
+This information is sent in a **regular packet**.
+
+.. code-block:: text
+
+    +------------------------------------------------+
+    | Reply packet (192 + payload)                   |
+    +------------------------------------------------+
+    | IV (8)                                         |
+    | IV Hash (32)                                   |
+    | Keyed hash (32)                                |
+    |                                                |
+    | +--------------------------------------------+ |
+    | | Encrypted payload (120 + payload)          | |
+    | +--------------------------------------------+ |
+    | | +----------------------------------------+ | |
+    | | | Double Ratchet header (80)             | | |
+    | | +----------------------------------------+ | |
+    | | | Nonce (24)                             | | |
+    | | | MAC (16)                               | | |
+    | | | +====================================+ | | |
+    | | | | Ns (3)                             | | | |
+    | | | | PNs (3)                            | | | |
+    | | | | DHRs (32)                          | | | |
+    | | | +====================================+ | | |
+    | | | Padding (2)                            | | |
+    | | +----------------------------------------+ | |
+    | |                                            | |
+    | | +----------------------------------------+ | |
+    | | | Double Ratchet payload (40 + payload)  | | |
+    | | +----------------------------------------+ | |
+    | | | Nonce (24)                             | | |
+    | | | MAC (16)                               | | |
+    | | | +====================================+ | | |
+    | | | | Payload                            | | | |
+    | | | +====================================+ | | |
+    | | +----------------------------------------+ | |
+    | +--------------------------------------------+ |
+    +------------------------------------------------+
+
+.. important::
+
+    Despite the fact that each packet's contents look like random
+    information, in the current version of unMessage all of them have
+    a different size. In the future, all packets should be padded to a
+    fixed size in order to achieve indistinguishability.
 
 .. _`diffie-hellman ratcheting`: https://whispersystems.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 .. _`double ratchet algorithm`: https://whispersystems.org/docs/specifications/doubleratchet
