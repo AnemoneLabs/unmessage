@@ -8,8 +8,8 @@ from .log import Logger
 from .peer import CONFIG
 
 
-UIS = {cli.Cli.__module__: cli,
-       gui.Gui.__module__: gui}
+UIS = {cli.__name__: cli,
+       gui.__name__: gui}
 
 
 log = Logger()
