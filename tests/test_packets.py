@@ -1,11 +1,17 @@
 import pytest
 
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis.strategies import binary
 
+from nacl.utils import random
 from unmessage import errors
 from unmessage import packets
 from pyaxo import b2a
+
+
+CORRECT_LEN_IV = random(packets.IV_LEN)
+CORRECT_LEN_HASH = random(packets.HASH_LEN)
+CORRECT_LEN_PAYLOAD = random(1)
 
 
 def join_encode_data(lines):
@@ -18,6 +24,13 @@ def join_encode_data(lines):
     binary(),
     binary(),
     binary(),
+)
+@example(
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_HASH,
+    '',
+    CORRECT_LEN_PAYLOAD,
 )
 def test_build_regular_packet(iv,
                               iv_hash,
