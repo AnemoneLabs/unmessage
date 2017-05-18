@@ -10,6 +10,7 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
+from .log import begin_logging, Logger, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -104,6 +105,8 @@ def get_auth_color(conversation):
 
 
 class Cli(PeerUi):
+    log = Logger()
+
     def __init__(self):
         self.help_info = None
         self.event_stop = Event()
@@ -239,6 +242,9 @@ class Cli(PeerUi):
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
+
+        begin_logging(self.peer.path_log_file, LogLevel.debug)
+
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,

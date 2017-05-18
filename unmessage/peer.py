@@ -21,6 +21,7 @@ from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
+from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
 from txtorcon import TorClientEndpoint
 
@@ -58,6 +59,8 @@ TOR_CONTROL_PORT = 9055
 
 
 class Peer(object):
+    log = Logger()
+
     state_created = 'created'
     state_running = 'running'
     state_stopped = 'stopped'
@@ -122,6 +125,10 @@ class Peer(object):
     @property
     def _path_onion_service_dir(self):
         return os.path.join(self._path_tor_dir, 'onion-service')
+
+    @property
+    def path_log_file(self):
+        return os.path.join(self._path_peer_dir, 'peer.log')
 
     @property
     def _contacts(self):

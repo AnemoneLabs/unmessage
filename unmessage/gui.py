@@ -12,8 +12,12 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
+from .log import begin_logging, Logger, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
+
+
+log = Logger()
 
 
 def threadsafe(f):
@@ -34,6 +38,8 @@ def write_on_text(text, content, clear=True):
 
 
 class Gui(Tk.Tk, PeerUi):
+    log = Logger()
+
     def __init__(self, name,
                  local_server_ip=None,
                  local_server_port=None,
@@ -112,6 +118,9 @@ class Gui(Tk.Tk, PeerUi):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
         self.peer = Peer(name, self)
+
+        begin_logging(self.peer.path_log_file, LogLevel.debug, begin_std=True)
+
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,

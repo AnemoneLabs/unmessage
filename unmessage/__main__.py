@@ -4,11 +4,15 @@ import sys
 
 from . import cli
 from . import gui
+from .log import Logger
 from .peer import CONFIG
 
 
 UIS = {cli.Cli.__module__: cli,
        gui.Gui.__module__: gui}
+
+
+log = Logger()
 
 
 def main():
