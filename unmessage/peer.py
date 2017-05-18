@@ -204,6 +204,7 @@ class Peer(object):
         return self._state == Peer.state_running
 
     def _notify_bootstrap(self, status):
+        self.log.info(status)
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
 
     def _create_peer_dir(self):
