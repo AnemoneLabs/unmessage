@@ -33,7 +33,7 @@ def test_build_regular_packet(iv,
             len(iv_hash) == packets.HASH_LEN and
             len(payload_hash) == packets.HASH_LEN and
             not len(handshake_key) and
-            len(payload_hash)):
+            len(payload)):
         assert isinstance(packets.build_regular_packet(data),
                           packets.RegularPacket)
     else:
