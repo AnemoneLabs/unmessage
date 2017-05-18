@@ -196,6 +196,9 @@ class Peer(object):
     def is_running(self):
         return self._state == Peer.state_running
 
+    def _notify_bootstrap(self, status):
+        self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
+
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
             os.makedirs(self._path_peer_dir)
@@ -560,8 +563,7 @@ class Peer(object):
             raise errors.CorruptedPacketError()
 
     def _start_server(self, launch_tor):
-        self._ui.notify_bootstrap(
-            notifications.UnmessageNotification('Configuring local server'))
+        self._notify_bootstrap('Configuring local server')
 
         endpoint = TCP4ServerEndpoint(self._twisted_reactor,
                                       self._port_local_server,
@@ -571,8 +573,7 @@ class Peer(object):
         d = Deferred()
 
         def endpoint_listening(port):
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Running local server'))
+            self._notify_bootstrap('Running local server')
 
             if self._local_mode:
                 d.callback(None)
@@ -588,8 +589,7 @@ class Peer(object):
         d_server.addCallbacks(endpoint_listening, d.errback)
 
         def run_reactor():
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Running reactor'))
+            self._notify_bootstrap('Running reactor')
 
             # TODO improve the way the reactor is run
             self._twisted_reactor.run(installSignalHandlers=0)
@@ -601,22 +601,16 @@ class Peer(object):
         d_tor = Deferred()
 
         def finish(result):
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification(
-                    'Added Onion Service to Tor'))
+            self._notify_bootstrap('Added Onion Service to Tor')
 
             d_tor.callback(result)
 
         def add_onion(tor):
             self._tor = tor
 
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification(
-                    'Controlling Tor process'))
+            self._notify_bootstrap('Controlling Tor process')
 
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification(
-                    'Waiting for the Onion Service'))
+            self._notify_bootstrap('Waiting for the Onion Service')
 
             onion_service_string = '{} {}:{}'.format(self._port_local_server,
                                                      self._ip_local_server,
@@ -638,13 +632,10 @@ class Peer(object):
             d_onion.addCallback(finish)
 
         if launch_tor:
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Launching Tor'))
+            self._notify_bootstrap('Launching Tor')
 
             def display_bootstrap_lines(prog, tag, summary):
-                self._ui.notify_bootstrap(
-                    notifications.UnmessageNotification(
-                        '{}%: {}'.format(prog, summary)))
+                self._notify_bootstrap('{}%: {}'.format(prog, summary))
 
             d_process = txtorcon.launch(
                 self._twisted_reactor,
@@ -652,9 +643,7 @@ class Peer(object):
                 data_directory=self._path_tor_data_dir,
                 socks_port=self._port_tor_socks)
         else:
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification(
-                    'Connecting to existing Tor'))
+            self._notify_bootstrap('Connecting to existing Tor')
 
             endpoint = TCP4ClientEndpoint(self._twisted_reactor,
                                           HOST,
@@ -854,11 +843,11 @@ class Peer(object):
               tor_socks_port=None,
               tor_control_port=None,
               local_mode=False):
+        self._notify_bootstrap('Starting peer')
+
         if local_mode:
             launch_tor = False
             self._local_mode = local_mode
-        self._ui.notify_bootstrap(
-            notifications.UnmessageNotification('Starting peer'))
 
         self._create_peer_dir()
         self._load_peer_info()
@@ -874,8 +863,7 @@ class Peer(object):
             self._port_tor_control = int(tor_control_port)
 
         def peer_started(result):
-            self._ui.notify_bootstrap(
-                notifications.UnmessageNotification('Peer started'))
+            self._notify_bootstrap('Peer started')
 
             self._axolotl = Axolotl(name=self.name,
                                     dbname=self._path_axolotl_db,
