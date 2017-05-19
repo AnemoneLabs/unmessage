@@ -1,0 +1,34 @@
+dist: trusty
+sudo: required
+
+language: python
+
+python:
+    - "2.7"
+
+addons:
+    apt:
+        packages:
+            - build-essential
+            - gcc
+            - libffi-dev
+            - libopus0
+            - libssl-dev
+            - portaudio19-dev
+            - python-dev
+            - python-tk
+
+before_install:
+    - .travis/install-libsodium.sh
+    - git fetch origin --tags
+
+install:
+    - pip install -U pip
+    - pip install -U pytest
+    - pip install .[dev]
+
+script:
+    - pytest --cov=./
+
+after_success:
+    - codecov
