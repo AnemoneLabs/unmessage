@@ -1,11 +1,13 @@
 import re
-from collections import namedtuple
 
 import attr
 from nacl.public import PublicKey
 
 
-Address = namedtuple('Address', 'host port')
+@attr.s
+class Address(object):
+    host = attr.ib(attr.validators.instance_of(str))
+    port = attr.ib(attr.validators.instance_of(int))
 
 
 @attr.s
