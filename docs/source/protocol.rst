@@ -314,7 +314,7 @@ Regular Packet
 Once both peers have initialized their sides of the conversation,
 there is no need for **Alice** to send the **handshake key** anymore.
 The only content subsequent exchanges transmit are their payloads.
-This information is sent in a **regular packet**.
+This information is sent in a **regular packet**:
 
 .. code-block:: text
 
