@@ -2,6 +2,7 @@ import re
 from collections import namedtuple
 
 import attr
+from nacl.public import PublicKey
 
 
 Address = namedtuple('Address', 'host port')
@@ -25,3 +26,12 @@ Regex.address_port = Regex(r'\d+')
 Regex.peer_identity = Regex(r'{}@{}:{}'.format(Regex.peer_name.pattern,
                                                Regex.onion_domain.pattern,
                                                Regex.address_port.pattern))
+
+
+def is_valid_identity(value):
+    return (isinstance(value, str) and
+            Regex.peer_identity.match(value) is not None)
+
+
+def is_valid_pub_key(value):
+    return isinstance(value, bytes) and len(value) == PublicKey.SIZE

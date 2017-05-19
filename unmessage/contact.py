@@ -1,10 +1,7 @@
-import re
-
 import attr
-from nacl.public import PublicKey
 
 from . import errors
-from .utils import Address
+from .utils import Address, is_valid_identity, is_valid_pub_key
 
 
 @attr.s
@@ -15,15 +12,13 @@ class Contact(object):
     has_presence = attr.ib(default=False)
 
     @identity.validator
-    def is_valid_identity(self, attribute, value):
-        if not (isinstance(value, str) and
-                re.match(r'[a-zA-Z0-9_-]+@[a-z2-7]{16}\.onion:\d+$', value)):
+    def validate_identity(self, attribute, value):
+        if not is_valid_identity(value):
             raise errors.InvalidIdentityError()
 
     @key.validator
-    def is_valid_key(self, attribute, value):
-        if not (isinstance(value, bytes) and
-                len(value) == PublicKey.SIZE):
+    def validate_key(self, attribute, value):
+        if not is_valid_pub_key(value):
             raise errors.InvalidPublicKeyError()
 
     @property
