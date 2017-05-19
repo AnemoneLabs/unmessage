@@ -1,6 +1,7 @@
 include COPYING
 include README.rst
 include requirements-dev.txt
+include requirements-docs.txt
 include requirements.txt
 include unmessage/_version.py
 include versioneer.py

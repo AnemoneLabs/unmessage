@@ -2,5 +2,3 @@ codecov
 hypothesis
 pytest
 pytest-cov
-Sphinx
-sphinx_rtd_theme
