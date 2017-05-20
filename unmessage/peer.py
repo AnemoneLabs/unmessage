@@ -33,7 +33,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address
+from .utils import Address, is_valid_identity
 from .smp import SMP
 
 
@@ -731,10 +731,13 @@ class Peer(object):
 
         if new_name:
             contact = conv.contact
-            contact.identity = contact.identity.replace(contact.name,
-                                                        new_name,
-                                                        maxreplace=1)
-            attr.validate(contact)
+            identity = contact.identity.replace(contact.name,
+                                                new_name,
+                                                maxreplace=1)
+            if is_valid_identity(identity):
+                contact.identity = identity
+            else:
+                raise errors.InvalidIdentityError()
 
         handshake_keys = pyaxo.generate_keypair()
         self._init_conv(
