@@ -2,7 +2,6 @@ import ConfigParser
 import errno
 import hmac
 import os
-import re
 import sqlite3
 import thread
 from hashlib import sha256
@@ -674,9 +673,7 @@ class Peer(object):
             e.wait()
 
     def _send_request(self, identity, key):
-        result = re.match(r'[^@]+@[^:]+(:(\d+))?$', identity)
-        port = result.group(2)
-        if not port:
+        if ':' not in identity:
             identity += ':' + str(PORT)
 
         try:
@@ -733,9 +730,11 @@ class Peer(object):
         conv = request.conversation
 
         if new_name:
-            address = re.match(r'[^@]+(@[^:]+:\d+)', conv.contact.identity)
-            conv.contact.identity = new_name + address.group(1)
-            attr.validate(conv.contact)
+            contact = conv.contact
+            contact.identity = contact.identity.replace(contact.name,
+                                                        new_name,
+                                                        maxreplace=1)
+            attr.validate(contact)
 
         handshake_keys = pyaxo.generate_keypair()
         self._init_conv(
