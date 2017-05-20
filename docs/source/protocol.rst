@@ -193,15 +193,17 @@ packet format:
   handshake and ratchet)
 
 - **Reply:** contains Alice's key (handshake) and optionally an
-  element
+  encrypted element
 
-- **Regular:** contains an element
+- **Regular:** contains an encrypted element
 
 .. note::
 
-    **Elements** represent the encrypted information exchanged in
-    unMessage's conversations. (e.g., *presence*, *text*,
-    *authentication*)
+    **Elements** are the plaintext of the information exchanged in
+    unMessage's conversations, which are wrapped by Double Ratchet's
+    encryption and added to reply/regular packets for transmission.
+    (e.g., *presence notifications*, *text messages*,
+    *authentication buffers*)
 
 The following sections summarize what each packet is used for, their
 exact contents and their size in *bytes*.
