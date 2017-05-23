@@ -15,6 +15,7 @@ CORRECT_LEN_KEY = random(packets.KEY_LEN)
 CORRECT_LEN_ENC_KEY = random(packets.ENC_KEY_LEN)
 CORRECT_LEN_PAYLOAD = random(1)
 CORRECT_LEN_HANDSHAKE_PACKET = random(1)
+CORRECT_LEN_IDENTITY = random(1)
 
 
 def join_encode_data(lines):
@@ -127,3 +128,34 @@ def test_build_request_packet(iv,
     else:
         with pytest.raises(errors.MalformedPacketError):
             packets.build_request_packet(data)
+
+
+@given(
+    binary(),
+    binary(),
+    binary(),
+    binary(),
+)
+@example(
+    CORRECT_LEN_IDENTITY,
+    CORRECT_LEN_KEY,
+    CORRECT_LEN_KEY,
+    CORRECT_LEN_KEY,
+)
+def test_build_handshake_packet(identity,
+                                identity_key,
+                                handshake_key,
+                                ratchet_key):
+    data = join_encode_data([identity,
+                             identity_key,
+                             handshake_key,
+                             ratchet_key])
+    if (len(identity) and
+            len(identity_key) == packets.KEY_LEN and
+            len(handshake_key) == packets.KEY_LEN and
+            len(ratchet_key) == packets.KEY_LEN):
+        assert isinstance(packets.build_handshake_packet(data),
+                          packets.HandshakePacket)
+    else:
+        with pytest.raises(errors.MalformedPacketError):
+            packets.build_handshake_packet(data)
