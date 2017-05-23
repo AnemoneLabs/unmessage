@@ -9,6 +9,7 @@ from unmessage import packets
 from pyaxo import b2a
 
 
+CORRECT_LEN_INTRO_DATA = random(1)
 CORRECT_LEN_IV = random(packets.IV_LEN)
 CORRECT_LEN_HASH = random(packets.HASH_LEN)
 CORRECT_LEN_KEY = random(packets.KEY_LEN)
@@ -20,6 +21,32 @@ CORRECT_LEN_IDENTITY = random(1)
 
 def join_encode_data(lines):
     return packets.LINESEP.join([b2a(l) for l in lines])
+
+
+@given(
+    binary(),
+    binary(),
+    binary(),
+)
+@example(
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_INTRO_DATA,
+)
+def test_build_intro_packet(iv,
+                            iv_hash,
+                            data):
+    data = join_encode_data([iv,
+                             iv_hash,
+                             data])
+    if (len(iv) == packets.IV_LEN and
+            len(iv_hash) == packets.HASH_LEN and
+            len(data)):
+        assert isinstance(packets.build_intro_packet(data),
+                          packets.IntroductionPacket)
+    else:
+        with pytest.raises(errors.MalformedPacketError):
+            packets.build_intro_packet(data)
 
 
 @given(
