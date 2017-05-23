@@ -928,7 +928,14 @@ class Peer(object):
     def accept_request(self, identity, new_name=None):
         request = self._inbound_requests.pop(identity)
 
-        t = Thread(target=self._accept_request, args=(request, new_name,))
+        def _accept_request():
+            try:
+                self._accept_request(request, new_name)
+            except errors.InvalidNameError as e:
+                self._inbound_requests[identity] = request
+                self._ui.notify_error(e)
+
+        t = Thread(target=_accept_request)
         t.daemon = True
         t.start()
 
