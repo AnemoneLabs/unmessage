@@ -731,9 +731,7 @@ class Peer(object):
 
         if new_name:
             contact = conv.contact
-            identity = contact.identity.replace(contact.name,
-                                                new_name,
-                                                maxreplace=1)
+            identity = contact.identity.replace(contact.name, new_name, 1)
             if is_valid_identity(identity):
                 contact.identity = identity
             else:
