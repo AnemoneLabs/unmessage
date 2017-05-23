@@ -516,7 +516,6 @@ class RequestWindow(Tk.Toplevel, object):
             state = Tk.DISABLED
             identity = contact.identity
             key = b2a(contact.key)
-            host, port = contact.address
             info_text = 'Chat request received!\nDo you know this peer?'
             button_text = 'Accept Request'
         else:
