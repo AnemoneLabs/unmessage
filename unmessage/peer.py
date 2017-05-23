@@ -737,7 +737,7 @@ class Peer(object):
             if is_valid_identity(identity):
                 contact.identity = identity
             else:
-                raise errors.InvalidIdentityError()
+                raise errors.InvalidNameError()
 
         handshake_keys = pyaxo.generate_keypair()
         self._init_conv(
