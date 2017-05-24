@@ -1,3 +1,6 @@
+import json
+
+import attr
 from nacl.utils import random
 from pyaxo import b2a
 
@@ -16,6 +19,27 @@ class Element(dict):
     @property
     def is_complete(self):
         return len(self) == self.part_len
+
+
+@attr.s
+class ElementPayload(object):
+    filtered_attr_names = None
+
+    content = attr.ib(default=None)
+
+    @classmethod
+    def get_filter(cls, attribute, value):
+        if cls.filtered_attr_names is None:
+            return True
+        else:
+            return attribute.name in cls.filtered_attr_names
+
+    @classmethod
+    def deserialize(cls, data):
+        return cls(**json.loads(data))
+
+    def serialize(self):
+        return json.dumps(attr.asdict(self, filter=self.get_filter))
 
 
 class RequestElement:
