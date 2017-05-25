@@ -362,8 +362,117 @@ This information is sent in a **regular packet**:
     a different size. In the future, all packets should be padded to a
     fixed size in order to achieve indistinguishability.
 
+Threat Model
+============
+unMessage is characterized by the packets it creates and processes,
+and the transport used to transmit such packets between its peers. Tor
+Onion Services is the current supported solution used to connect
+peers, but as unMessage employs an application protocol that manages
+its own packets, it would be possible to allow the use of other
+transports as long as such packets are transmitted from one peer to
+another, anonymously.
+
+It is expected that the transport connecting the peers conceals their
+real identity, location and path of transmissions from each other as
+well as from an external adversary observing the network that is not
+as powerful as a Global Passive Adversary. From this perspective,
+unMessage is susceptible to the same security vulnerabilities as the
+transport in use.
+
+Although unMessage expects that information to be anonymously
+*exchanged* between the peers, it does not require anything beyond
+that because by default its packet format provides:
+
+- Integrity
+- Authenticity
+- Confidentiality
+- Anonymity
+
+As conversations are established between peers with Double Ratchet
+sessions, they also benefit from the properties of:
+
+- Forward secrecy
+- Future secrecy
+- Deniability
+
+.. _sec-protocol-adversary:
+
+Adversary Capabilities
+----------------------
+From the application's perspective, taking into account the local
+server availability, packet creation and packet processing, we assume
+the following capabilities from an adversary:
+
+1. An adversary is unable to break the cryptographic primitives used by
+   unMessage.
+
+2. An adversary is able to observe, intercept, replay and modify all
+   packets exchanged by the peers.
+
+3. An adversary is able to send requests and malformed packets to a
+   peer whose unMessage address and public identity key has been
+   acknowledged by them.
+
+4. An adversary is unable to perform an attack by making multiple
+   connections or sending multiple requests to a peer whose unMessage
+   address has been acknowledged by them, making that peer
+   unavailable to others.
+
+5. An adversary is unable to send malformed/malicious elements
+   to a peer who accepted their request and therefore has established
+   a conversation with.
+
+6. An adversary is unable to compromise a peer's private identity key
+   to impersonate them in current and future conversations.
+
+7. An adversary is unable to compromise a peer's private identity key
+   to decrypt any of the requests they received/accepted.
+
+.. _sec-protocol-attacks:
+
+Possible Attacks
+----------------
+Some limitations to the adversary's capabilities had to be imposed
+due to the current implementation of unMessage, which does not yet
+prevent some of the attacks mentioned in
+:ref:`sec-protocol-adversary`:
+
+- unMessage maps an Onion Service to a local server that accepts
+  connections and `receives netstrings`_ to be parsed as unMessage
+  packets. This behavior allows an adversary who has knowledge of a
+  peer's Onion Service address to perform the attack mentioned in
+  item `4`, by either making the Onion Service inaccessible in the
+  network or overloading the unMessage instance.
+
+- Although unMessage validates the format of the packets it expects to
+  receive and an adversary cannot make any modifications due to the
+  integrity checks, once a packet is decrypted after being validated
+  by passing such checks, there is not yet a mechanism validating the
+  conversation elements (i.e., the plaintext of reply/regular packets)
+  and the attack mentioned in item `5` is possible to be performed.
+
+- The attack mentioned in item `6` can be mitigated as unMessage
+  provides an authentication feature. As long as the users have
+  securely agreed on a secret that is not known by the adversary, the
+  party who the impersonator is communicating with can use it to
+  initiate the authentication process and detect the attack. Even
+  though any user can initiate the authentication at any time after a
+  conversation is established, it is up to them to properly handle the
+  secret and regularly authenticate themselves - or at least do so
+  under any suspicion. Even if users take such actions, unMessage is
+  only able to detect instead of prevent it.
+
+- All the peer information required to send/receive conversation
+  requests is encrypted with a shared secret derived from a
+  Diffie-Hellman key exchange using Bob's request key and Alice's
+  identity key. The request key is ephemeral and is disposed once the
+  conversation is established, but the identity key is not. For that
+  reason, the attack mentioned in item `7` is possible to be performed
+  but not prevented by unMessage.
+
 .. _`diffie-hellman ratcheting`: https://whispersystems.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 .. _`double ratchet algorithm`: https://whispersystems.org/docs/specifications/doubleratchet
 .. _`hsub`: http://is-not-my.name/hsub.html
+.. _`receives netstrings`: https://twistedmatrix.com/documents/16.6.0/api/twisted.protocols.basic.NetstringReceiver.html
 .. _`tor onion services`: https://www.torproject.org/docs/hidden-services.html
 .. _`triple diffie-hellman key agreement`: https://whispersystems.org/blog/simplifying-otr-deniability
