@@ -65,6 +65,20 @@ class AuthenticationElement:
     type_ = 'auth'
 
 
+@attr.s
+class FileRequestElement(ElementPayload):
+    type_ = 'filereq'
+    request_accepted = 'accepted'
+
+    size = attr.ib(default=None)
+    checksum = attr.ib(default=None)
+
+
+@attr.s
+class FileElement(ElementPayload):
+    type_ = 'file'
+
+
 REGULAR_ELEMENT_TYPES = [RequestElement.type_,
                          PresenceElement.type_,
                          MessageElement.type_,
