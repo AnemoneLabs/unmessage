@@ -28,7 +28,7 @@ class ElementPayload(object):
     content = attr.ib(default=None)
 
     @classmethod
-    def get_filter(cls, attribute, value):
+    def filter_attrs(cls, attribute, value):
         if cls.filtered_attr_names is None:
             return True
         else:
@@ -39,7 +39,7 @@ class ElementPayload(object):
         return cls(**json.loads(data))
 
     def serialize(self):
-        return json.dumps(attr.asdict(self, filter=self.get_filter))
+        return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
 
 class RequestElement:
