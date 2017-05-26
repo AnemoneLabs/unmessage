@@ -396,10 +396,8 @@ class Peer(object):
               ``_send_packet``
             - Split the element into multiple packets if needed
         """
-        d = Deferred()
-
         packet = packets.ElementPacket(type_, payload=content)
-        conv.queue_out_packets.put((packet, conv, d, handshake_key))
+        d = self._send_packet(packet, conv, handshake_key)
 
         d.addCallbacks(
             lambda args: self._element_parser.parse(*args),
@@ -407,13 +405,15 @@ class Peer(object):
                 notifications.UnmessageNotification(
                     failure.getErrorMessage())))
 
-    def _send_packet(self, packet, conversation, d, handshake_key=None):
+    def _send_packet(self, packet, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
 
         Before proceding, make sure the conversation has a connection. Wrap the
         element packet with the regular encrypted packet and send it. After
         successfully transmitting it, process it and parse the element.
         """
+        d = Deferred()
+
         def element_sent(result):
             element = self._process_element_packet(
                 packet,
@@ -480,6 +480,8 @@ class Peer(object):
 
             # the peer connects to the other one to resume a conversation
             connect(connection_made)
+
+        return d
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
@@ -1071,7 +1073,6 @@ class Conversation(object):
         self.queue_in_data = Queue()
         self.queue_out_data = Queue()
         self.queue_in_packets = Queue()
-        self.queue_out_packets = Queue()
 
         self.elements = dict()
         self.elements_lock = Lock()
@@ -1084,14 +1085,11 @@ class Conversation(object):
         self.thread_out_data.daemon = True
         self.thread_in_packets = Thread(target=self.check_in_packets)
         self.thread_in_packets.daemon = True
-        self.thread_out_packets = Thread(target=self.check_out_packets)
-        self.thread_out_packets.daemon = True
 
     def start(self):
         self.thread_in_data.start()
         self.thread_out_data.start()
         self.thread_in_packets.start()
-        self.thread_out_packets.start()
 
     @property
     def is_authenticated(self):
@@ -1155,11 +1153,6 @@ class Conversation(object):
         while True:
             args = self.queue_in_packets.get()
             self.peer._receive_packet(*args)
-
-    def check_out_packets(self):
-        while True:
-            args = self.queue_out_packets.get()
-            self.peer._send_packet(*args)
 
     def send_data(self, data):
         d = Deferred()
