@@ -396,10 +396,18 @@ class Peer(object):
               ``_send_packet``
             - Split the element into multiple packets if needed
         """
-        packet = packets.ElementPacket(type_, payload=content)
-        conv.queue_out_packets.put([packet, conv, handshake_key])
+        d = Deferred()
 
-    def _send_packet(self, packet, conversation, handshake_key=None):
+        packet = packets.ElementPacket(type_, payload=content)
+        conv.queue_out_packets.put((packet, conv, d, handshake_key))
+
+        d.addCallbacks(
+            lambda args: self._element_parser.parse(*args),
+            lambda failure: conv.ui.notify_disconnect(
+                notifications.UnmessageNotification(
+                    failure.getErrorMessage())))
+
+    def _send_packet(self, packet, conversation, d, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
 
         Before proceding, make sure the conversation has a connection. Wrap the
@@ -412,15 +420,14 @@ class Peer(object):
                 conversation,
                 sender=self.name,
                 receiver=conversation.contact.name)
-            self._element_parser.parse(element, conversation)
+            d.callback((element, conversation))
 
         def element_not_sent(failure):
             # TODO handle remaining packets
             conversation.close()
 
             # TODO handle expected errors and display better messages
-            conversation.ui.notify_disconnect(
-                notifications.UnmessageNotification(str(failure)))
+            d.errback(failure)
 
         def send_with_manager(manager):
             # at this point there is already an existing conversation between
