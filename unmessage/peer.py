@@ -543,8 +543,9 @@ class Peer(object):
             keys = conversation.keys
             handshake_key = ''
 
-        ciphertext = conversation.axolotl.encrypt(plaintext)
-        conversation.axolotl.save()
+        with conversation.axolotl_lock:
+            ciphertext = conversation.axolotl.encrypt(plaintext)
+            conversation.axolotl.save()
 
         return packets.RegularPacket(
             b2a(iv),
@@ -561,8 +562,9 @@ class Peer(object):
                                   a2b(packet.handshake_key) + ciphertext)
 
         if payload_hash == a2b(packet.payload_hash):
-            plaintext = conversation.axolotl.decrypt(ciphertext)
-            conversation.axolotl.save()
+            with conversation.axolotl_lock:
+                plaintext = conversation.axolotl.decrypt(ciphertext)
+                conversation.axolotl.save()
             return packets.build_element_packet(plaintext)
         else:
             raise errors.CorruptedPacketError()
@@ -1061,6 +1063,7 @@ class Conversation(object):
         self.request_keys = request_keys
         self.keys = keys
         self.axolotl = axolotl
+        self.axolotl_lock = Lock()
         self.auth_session = None
 
         self._managers = dict()
