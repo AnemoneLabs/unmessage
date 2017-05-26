@@ -406,7 +406,7 @@ class Peer(object):
         element packet with the regular encrypted packet and send it. After
         successfully transmitting it, process it and parse the element.
         """
-        def element_sent():
+        def element_sent(result):
             element = self._process_element_packet(
                 packet,
                 conversation,
@@ -429,9 +429,8 @@ class Peer(object):
             reg_packet = self._encrypt(packet, conversation, handshake_key)
 
             # pack the ``RegularPacket`` into a ``str`` and send it
-            manager.send_data(str(reg_packet),
-                              callback=element_sent,
-                              errback=element_not_sent)
+            d_send_data = manager.send_data(str(reg_packet))
+            d_send_data.addCallbacks(element_sent, element_not_sent)
 
         def connection_failed(failure):
             if packet.type_ != PresenceElement.type_:
@@ -685,7 +684,7 @@ class Peer(object):
             req = self._create_request(contact)
 
             def connection_made(connection):
-                def request_sent():
+                def request_sent(result):
                     self._outbound_requests[contact.identity] = req
                     self._ui.notify_out_request(
                         notifications.ContactNotification(
@@ -706,9 +705,8 @@ class Peer(object):
 
                 # pack the ``RequestPacket`` into a ``str`` and send it to the
                 # other peer
-                conv.send_data(str(req.packet),
-                               callback=request_sent,
-                               errback=request_failed)
+                d_send_data = conv.send_data(str(req.packet))
+                d_send_data.addCallbacks(request_sent, request_failed)
 
             def connection_failed(failure):
                 if failure.check(txtorcon.socks.HostUnreachableError,
@@ -1134,14 +1132,14 @@ class Conversation(object):
 
     def check_out_data(self):
         while True:
-            data, callback, errback = self.queue_out_data.get()
+            data, d = self.queue_out_data.get()
             try:
                 self.connection.send(data)
             except Exception as e:
-                errback(errors.UnmessageError(title=type(e),
-                                              message=e.message))
+                d.errback(errors.UnmessageError(title=type(e),
+                                                message=e.message))
             else:
-                callback()
+                d.callback(None)
 
     def check_in_packets(self):
         while True:
@@ -1153,8 +1151,10 @@ class Conversation(object):
             args = self.queue_out_packets.get()
             self.peer._send_packet(*args)
 
-    def send_data(self, data, callback, errback):
-        self.queue_out_data.put([data, callback, errback])
+    def send_data(self, data):
+        d = Deferred()
+        self.queue_out_data.put((data, d))
+        return d
 
     def handle_conv_data(self, data, connection):
         packet = packets.build_regular_packet(data)
