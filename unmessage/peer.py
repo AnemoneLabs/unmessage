@@ -251,6 +251,7 @@ class Peer(object):
         return convs
 
     def _send_presence(self, offline=False):
+        # TODO use a DeferredList
         self._presence_convs = list()
         self._presence_event = Event()
 
@@ -258,11 +259,19 @@ class Peer(object):
             if c.contact.has_presence:
                 if offline and c.is_active:
                     self._presence_convs.append(c.contact.name)
-                    self._send_element(c, PresenceElement.type_,
-                                       content=PresenceElement.status_offline)
+                    d = self._send_element(
+                        c, PresenceElement.type_,
+                        content=PresenceElement.status_offline)
+                    d.addCallbacks(
+                        lambda args: self._element_parser.parse(*args),
+                        lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
-                    self._send_element(c, PresenceElement.type_,
-                                       content=PresenceElement.status_online)
+                    d = self._send_element(
+                        c, PresenceElement.type_,
+                        content=PresenceElement.status_online)
+                    d.addCallbacks(
+                        lambda args: self._element_parser.parse(*args),
+                        lambda failure: self._notify_error(c, failure))
 
         if self._presence_convs:
             # wait until all conversations are notified
@@ -405,6 +414,7 @@ class Peer(object):
         del self._contacts[conversation.contact.name]
         del self._conversations[conversation.contact.name]
 
+    @inlineCallbacks
     def _send_element(self, conv, type_, content, handshake_key=None):
         """Create an ``ElementPacket`` and add it to the outbout packets queue.
 
@@ -414,10 +424,10 @@ class Peer(object):
             - Split the element into multiple packets if needed
         """
         packet = packets.ElementPacket(type_, payload=content)
-        d = self._send_packet(packet, conv, handshake_key)
 
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conv, failure))
+        result = yield self._send_packet(packet, conv, handshake_key)
+
+        returnValue(result)
 
     @inlineCallbacks
     def _send_packet(self, packet, conversation, handshake_key=None):
@@ -762,10 +772,12 @@ class Peer(object):
                 request.packet.handshake_packet.ratchet_key),
             mode=True)
 
-        self._send_element(conv,
-                           RequestElement.type_,
-                           content=RequestElement.request_accepted,
-                           handshake_key=handshake_keys.pub)
+        d = self._send_element(conv,
+                               RequestElement.type_,
+                               content=RequestElement.request_accepted,
+                               handshake_key=handshake_keys.pub)
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conv, failure))
 
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
@@ -781,10 +793,14 @@ class Peer(object):
                         conversation.remove_manager(untalk_session)
                         self._ui.notify_error(e)
                     else:
-                        self._send_element(
+                        d = self._send_element(
                             conversation,
                             UntalkElement.type_,
                             content=b2a(untalk_session.handshake_keys.pub))
+                        d.addCallbacks(
+                            lambda args: self._element_parser.parse(*args),
+                            lambda failure: self._notify_error(conversation,
+                                                               failure))
             else:
                 self._ui.notify_error(errors.UntalkError(
                     message='You can only make one voice conversation at a '
@@ -805,9 +821,12 @@ class Peer(object):
         return True
 
     def _send_message(self, conversation, plaintext):
-        self._send_element(conversation,
-                           MessageElement.type_,
-                           content=plaintext)
+        d = self._send_element(conversation,
+                               MessageElement.type_,
+                               content=plaintext)
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conversation,
+                                                          failure))
 
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
@@ -816,10 +835,13 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        self._send_element(conversation,
-                           AuthenticationElement.type_,
-                           content=auth_session.start(
-                               conversation.keys.auth_secret_key + secret))
+        d = self._send_element(conversation,
+                               AuthenticationElement.type_,
+                               content=auth_session.start(
+                                   conversation.keys.auth_secret_key + secret))
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conversation,
+                                                          failure))
 
     def get_contact(self, name):
         return self.get_conversation(name).contact
@@ -1383,9 +1405,14 @@ class ElementParser:
                                     conversation.contact.name)))
             else:
                 if next_buffer:
-                    self.peer._send_element(conversation,
-                                            type_=AuthenticationElement.type_,
-                                            content=next_buffer)
+                    d = self.peer._send_element(
+                        conversation,
+                        type_=AuthenticationElement.type_,
+                        content=next_buffer)
+                    d.addCallbacks(
+                        lambda args: self.peer._element_parser.parse(*args),
+                        lambda failure: self.peer._notify_error(conversation,
+                                                                failure))
             if conversation.is_authenticated is None:
                 # the authentication is not complete as buffers are still being
                 # exchanged
