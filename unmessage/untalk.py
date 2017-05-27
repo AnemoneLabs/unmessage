@@ -11,6 +11,7 @@ from opuslib.api import constants as opus_constants
 from opuslib.api import ctl as opus_ctl
 from opuslib.api import decoder as opus_decoder
 from opuslib.api import encoder as opus_encoder
+from twisted.internet.defer import Deferred
 
 from . import errors
 from . import notifications
@@ -222,15 +223,23 @@ class UntalkSession(object):
             # within this data and is processed as a regular packet
             self.conversation.queue_in_data.put([data, self.connection])
 
-    def send_data(self, data, callback, errback):
-        try:
-            self.connection.send(data)
-        except Exception as e:
-            self.conversation.peer._ui.notify_error(
-                errors.UntalkError(
+    def send_data(self, data):
+        d = Deferred()
+
+        def send():
+            try:
+                self.connection.send(data)
+            except Exception as e:
+                d.errback(errors.UntalkError(
                     message='{}: {}'.format(str(type(e)), e.message)))
-        else:
-            callback()
+            else:
+                d.callback(None)
+
+        t = Thread(target=send)
+        t.daemon = True
+        t.start()
+
+        return d
 
     def listen(self):
         try:
