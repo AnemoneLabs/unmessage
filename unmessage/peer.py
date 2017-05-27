@@ -481,7 +481,7 @@ class Peer(object):
 
         try:
             # pack the ``RegularPacket`` into a ``str`` and send it
-            manager.send_data(str(reg_packet))
+            yield manager.send_data(str(reg_packet))
         except Exception as failure:
             # TODO handle remaining packets
             conversation.close()
