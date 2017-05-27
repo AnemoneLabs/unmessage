@@ -1431,6 +1431,8 @@ class _ConversationProtocol(NetstringReceiver):
     type_untalk = elements.UntalkElement.type_
 
     def __init__(self, factory, connection_made):
+        self._lock_send = Lock()
+
         self.factory = factory
         self.connection_made = connection_made
         self.manager = None
@@ -1471,7 +1473,8 @@ class _ConversationProtocol(NetstringReceiver):
                     message='Packet received without a manager'))
 
     def send(self, string):
-        self.sendString(string)
+        with self._lock_send:
+            self.sendString(string)
 
 
 class PeerInfo:
