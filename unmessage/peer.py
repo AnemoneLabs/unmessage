@@ -425,18 +425,14 @@ class Peer(object):
         """
         packet = packets.ElementPacket(type_, payload=content)
 
-        result = yield self._send_packet(packet, conv, handshake_key)
+        manager = yield self._get_active_manager(packet, conv)
+        result = yield self._send_packet(packet, manager, conv, handshake_key)
 
         returnValue(result)
 
     @inlineCallbacks
-    def _send_packet(self, packet, conversation, handshake_key=None):
-        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
-
-        Before proceding, make sure the conversation has a connection. Wrap the
-        element packet with the regular encrypted packet and send it. After
-        successfully transmitting it, process it and parse the element.
-        """
+    def _get_active_manager(self, packet, conversation):
+        # TODO handle an element instead of a packet
         def connection_failed(failure):
             if packet.type_ != PresenceElement.type_:
                 if failure.check(txtorcon.socks.HostUnreachableError,
@@ -474,6 +470,16 @@ class Peer(object):
                     manager = conversation.add_connection(connection,
                                                           packet.type_)
 
+        returnValue(manager)
+
+    @inlineCallbacks
+    def _send_packet(self, packet, manager, conversation, handshake_key=None):
+        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
+
+        Before proceding, make sure the conversation has a connection. Wrap the
+        element packet with the regular encrypted packet and send it. After
+        successfully transmitting it, process it and parse the element.
+        """
         # at this point there is already an existing conversation between
         # the two parties in the database, so a ``RegularPacket`` can be
         # created with ``_encrypt``
