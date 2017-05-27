@@ -404,9 +404,7 @@ class Peer(object):
 
         d.addCallbacks(
             lambda args: self._element_parser.parse(*args),
-            lambda failure: conv.ui.notify_disconnect(
-                notifications.UnmessageNotification(
-                    failure.getErrorMessage())))
+            lambda failure: conv.ui.notify_disconnect(failure))
 
     def _send_packet(self, packet, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
@@ -430,7 +428,10 @@ class Peer(object):
             conversation.close()
 
             # TODO handle expected errors and display better messages
-            d.errback(failure)
+            e = errors.ConnectionLostError()
+            e.title += ' - ' + failure.title
+            e.message += ' - ' + failure.message
+            d.errback(e)
 
         def send_with_manager(manager):
             # at this point there is already an existing conversation between
