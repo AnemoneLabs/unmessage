@@ -416,12 +416,16 @@ class Peer(object):
 
     @inlineCallbacks
     def _send_element(self, conv, type_, content, handshake_key=None):
-        """Create an ``ElementPacket`` and add it to the outbout packets queue.
+        """Create an ``ElementPacket``, connect (if needed) and send it.
+
+        Return a ``Deferred`` that is fired after the the element is sent using
+        the appropriate manager.
 
         TODO
             - Size invariance should be handled here, before encryption by
               ``_send_packet``
             - Split the element into multiple packets if needed
+            - Maybe use a ``DeferredList``
         """
         packet = packets.ElementPacket(type_, payload=content)
 
@@ -432,6 +436,14 @@ class Peer(object):
 
     @inlineCallbacks
     def _get_active_manager(self, packet, conversation):
+        """Get a manager with an active connection to send the element.
+
+        Return a ``Deferred`` that is fired with a conversation manager capable
+        of transmitting the element. In case the conversation does not have an
+        active connection or it is not a regular element, establish a new
+        connection. Otherwise, use the conversation's current active
+        connection.
+        """
         # TODO handle an element instead of a packet
         def connection_failed(failure):
             if packet.type_ != PresenceElement.type_:
@@ -476,23 +488,19 @@ class Peer(object):
     def _send_packet(self, packet, manager, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
 
-        Before proceding, make sure the conversation has a connection. Wrap the
-        element packet with the regular encrypted packet and send it. After
-        successfully transmitting it, process it and parse the element.
+        Wrap the element packet with the regular encrypted packet and return a
+        ``Deferred`` after successfully transmitting it.
         """
-        # at this point there is already an existing conversation between
-        # the two parties in the database, so a ``RegularPacket`` can be
-        # created with ``_encrypt``
         reg_packet = self._encrypt(packet, conversation, handshake_key)
 
         try:
             # pack the ``RegularPacket`` into a ``str`` and send it
             yield manager.send_data(str(reg_packet))
         except Exception as failure:
-            # TODO handle remaining packets
+            # TODO handle remaining packets and close the conversation
+            # somewhere else
             conversation.close()
 
-            # TODO handle expected errors and display better messages
             e = errors.ConnectionLostError()
             e.title += ' - ' + failure.title
             e.message += ' - ' + failure.message
