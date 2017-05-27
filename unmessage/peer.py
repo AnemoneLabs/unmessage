@@ -402,9 +402,18 @@ class Peer(object):
         packet = packets.ElementPacket(type_, payload=content)
         d = self._send_packet(packet, conv, handshake_key)
 
-        d.addCallbacks(
-            lambda args: self._element_parser.parse(*args),
-            lambda failure: conv.ui.notify_disconnect(failure))
+        def errback(failure):
+            if failure.check(errors.ConnectionLostError):
+                conv.ui.notify_disconnect(failure.value)
+            elif failure.check(errors.OfflinePeerError):
+                conv.ui.notify_offline(failure.value)
+            elif failure.check(errors.UnmessageError):
+                conv.ui.notify_error(failure.value)
+            else:
+                conv.ui.notify_error(
+                    errors.UnmessageError(failure.getErrorMessage()))
+
+        d.addCallbacks(lambda args: self._element_parser.parse(*args), errback)
 
     def _send_packet(self, packet, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
@@ -447,12 +456,11 @@ class Peer(object):
             if packet.type_ != PresenceElement.type_:
                 if failure.check(txtorcon.socks.HostUnreachableError,
                                  txtorcon.socks.TtlExpiredError):
-                    conversation.ui.notify_offline(
-                        errors.OfflinePeerError(
-                            title=failure.getErrorMessage(),
-                            contact=conversation.contact.name))
+                    d.errback(errors.OfflinePeerError(
+                        title=failure.getErrorMessage(),
+                        contact=conversation.contact.name))
                 else:
-                    conversation.ui.notify_error(errors.UnmessageError(
+                    d.errback(errors.UnmessageError(
                         title='Conversation connection failed',
                         message=str(failure)))
 
