@@ -260,7 +260,9 @@ class Peer(object):
         manager.start()
         return manager
 
-    def _connect(self, address, callback, errback):
+    def _connect(self, address):
+        d = Deferred()
+
         if self._local_mode:
             point = TCP4ClientEndpoint(self._twisted_reactor,
                                        host=HOST, port=address.port)
@@ -271,12 +273,13 @@ class Peer(object):
                                       socks_port=self._port_tor_socks)
 
         def connect_from_thread():
-            d = connectProtocol(point,
-                                _ConversationProtocol(self._twisted_factory,
-                                                      callback))
-            d.addErrback(errback)
+            d_conn_proto = connectProtocol(
+                point, _ConversationProtocol(self._twisted_factory))
+            d_conn_proto.addCallbacks(d.callback, d.errback)
 
         self._twisted_reactor.callFromThread(connect_from_thread)
+
+        return d
 
     def _create_request(self, contact):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
@@ -453,9 +456,8 @@ class Peer(object):
                         message=str(failure)))
 
         def connect(connection_made):
-            self._connect(conversation.contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
+            d_connect = self._connect(conversation.contact.address)
+            d_connect.addCallbacks(connection_made, connection_failed)
 
         if conversation.is_active:
             if packet.type_ in elements.REGULAR_ELEMENT_TYPES:
@@ -731,9 +733,8 @@ class Peer(object):
                         title='Request connection failed',
                         message=str(failure)))
 
-            self._connect(contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
+            d_connect = self._connect(contact.address)
+            d_connect.addCallbacks(connection_made, connection_failed)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
