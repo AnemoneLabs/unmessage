@@ -1430,7 +1430,7 @@ class _ConversationProtocol(NetstringReceiver):
     type_regular = 'reg'
     type_untalk = elements.UntalkElement.type_
 
-    def __init__(self, factory, connection_made):
+    def __init__(self, factory, connection_made=None):
         self._lock_send = Lock()
 
         self.factory = factory
@@ -1439,7 +1439,8 @@ class _ConversationProtocol(NetstringReceiver):
         self.type_ = None
 
     def connectionMade(self):
-        self.connection_made(self)
+        if self.connection_made:
+            self.connection_made(self)
 
     def add_manager(self, manager, type_=None):
         self.manager = manager
