@@ -16,11 +16,12 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, Keypair, a2b, b2a
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
 from twisted.protocols.basic import NetstringReceiver
+from twisted.python.failure import Failure
 from txtorcon import TorClientEndpoint
 
 from . import elements
@@ -415,6 +416,7 @@ class Peer(object):
 
         d.addCallbacks(lambda args: self._element_parser.parse(*args), errback)
 
+    @inlineCallbacks
     def _send_packet(self, packet, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
 
@@ -422,17 +424,52 @@ class Peer(object):
         element packet with the regular encrypted packet and send it. After
         successfully transmitting it, process it and parse the element.
         """
-        d = Deferred()
+        def connection_failed(failure):
+            if packet.type_ != PresenceElement.type_:
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    raise Failure(errors.OfflinePeerError(
+                        title=failure.getErrorMessage(),
+                        contact=conversation.contact.name))
+                else:
+                    raise Failure(errors.UnmessageError(
+                        title='Conversation connection failed',
+                        message=str(failure)))
 
-        def element_sent(result):
-            element = self._process_element_packet(
-                packet,
-                conversation,
-                sender=self.name,
-                receiver=conversation.contact.name)
-            d.callback((element, conversation))
+        manager = conversation
 
-        def element_not_sent(failure):
+        if not conversation.is_active:
+            try:
+                # the peer connects to the other one to resume a conversation
+                connection = yield self._connect(conversation.contact.address)
+            except Exception as e:
+                connection_failed(Failure(e))
+            else:
+                conversation.set_active(connection, Conversation.state_conv)
+        elif packet.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager = conversation._get_manager(packet.type_)
+
+            if not manager.connection:
+                try:
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
+                    connection = yield self._connect(
+                        conversation.contact.address)
+                except Exception as e:
+                    connection_failed(Failure(e))
+                else:
+                    manager = conversation.add_connection(connection,
+                                                          packet.type_)
+
+        # at this point there is already an existing conversation between
+        # the two parties in the database, so a ``RegularPacket`` can be
+        # created with ``_encrypt``
+        reg_packet = self._encrypt(packet, conversation, handshake_key)
+
+        try:
+            # pack the ``RegularPacket`` into a ``str`` and send it
+            manager.send_data(str(reg_packet))
+        except Exception as failure:
             # TODO handle remaining packets
             conversation.close()
 
@@ -440,59 +477,15 @@ class Peer(object):
             e = errors.ConnectionLostError()
             e.title += ' - ' + failure.title
             e.message += ' - ' + failure.message
-            d.errback(e)
 
-        def send_with_manager(manager):
-            # at this point there is already an existing conversation between
-            # the two parties in the database, so a ``RegularPacket`` can be
-            # created with ``_encrypt``
-            reg_packet = self._encrypt(packet, conversation, handshake_key)
-
-            # pack the ``RegularPacket`` into a ``str`` and send it
-            d_send_data = manager.send_data(str(reg_packet))
-            d_send_data.addCallbacks(element_sent, element_not_sent)
-
-        def connection_failed(failure):
-            if packet.type_ != PresenceElement.type_:
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    d.errback(errors.OfflinePeerError(
-                        title=failure.getErrorMessage(),
-                        contact=conversation.contact.name))
-                else:
-                    d.errback(errors.UnmessageError(
-                        title='Conversation connection failed',
-                        message=str(failure)))
-
-        def connect(connection_made):
-            d_connect = self._connect(conversation.contact.address)
-            d_connect.addCallbacks(connection_made, connection_failed)
-
-        if conversation.is_active:
-            if packet.type_ in elements.REGULAR_ELEMENT_TYPES:
-                send_with_manager(conversation)
-            else:
-                manager = conversation._get_manager(packet.type_)
-                if not manager.connection:
-                    def connection_made(connection):
-                        manager = conversation.add_connection(connection,
-                                                              packet.type_)
-                        send_with_manager(manager)
-
-                    # the peer makes another connection to the other one to
-                    # send this "special" element
-                    connect(connection_made)
-                else:
-                    send_with_manager(manager)
+            raise Failure(e)
         else:
-            def connection_made(connection):
-                conversation.set_active(connection, Conversation.state_conv)
-                send_with_manager(conversation)
-
-            # the peer connects to the other one to resume a conversation
-            connect(connection_made)
-
-        return d
+            element = self._process_element_packet(
+                packet,
+                conversation,
+                sender=self.name,
+                receiver=conversation.contact.name)
+            returnValue((element, conversation))
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
