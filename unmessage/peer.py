@@ -199,6 +199,19 @@ class Peer(object):
     def _notify_bootstrap(self, status):
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
 
+    def _notify_error(self, conv, error):
+        failure = error if isinstance(error, Failure) else Failure(error)
+
+        if failure.check(errors.ConnectionLostError):
+            conv.ui.notify_disconnect(failure.value)
+        elif failure.check(errors.OfflinePeerError):
+            conv.ui.notify_offline(failure.value)
+        elif failure.check(errors.UnmessageError):
+            conv.ui.notify_error(failure.value)
+        else:
+            conv.ui.notify_error(
+                errors.UnmessageError(failure.getErrorMessage()))
+
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
             os.makedirs(self._path_peer_dir)
@@ -403,18 +416,8 @@ class Peer(object):
         packet = packets.ElementPacket(type_, payload=content)
         d = self._send_packet(packet, conv, handshake_key)
 
-        def errback(failure):
-            if failure.check(errors.ConnectionLostError):
-                conv.ui.notify_disconnect(failure.value)
-            elif failure.check(errors.OfflinePeerError):
-                conv.ui.notify_offline(failure.value)
-            elif failure.check(errors.UnmessageError):
-                conv.ui.notify_error(failure.value)
-            else:
-                conv.ui.notify_error(
-                    errors.UnmessageError(failure.getErrorMessage()))
-
-        d.addCallbacks(lambda args: self._element_parser.parse(*args), errback)
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conv, failure))
 
     @inlineCallbacks
     def _send_packet(self, packet, conversation, handshake_key=None):
