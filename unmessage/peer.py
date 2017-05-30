@@ -59,13 +59,13 @@ TOR_CONTROL_PORT = 9055
 
 
 class Peer(object):
-    log = Logger()
-
     state_created = 'created'
     state_running = 'running'
     state_stopped = 'stopped'
 
     def __init__(self, name, ui=None):
+        self.log = Logger()
+
         if not name:
             raise errors.InvalidNameError()
 

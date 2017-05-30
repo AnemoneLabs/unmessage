@@ -105,9 +105,9 @@ def get_auth_color(conversation):
 
 
 class Cli(PeerUi):
-    log = Logger()
-
     def __init__(self):
+        self.log = Logger()
+
         self.help_info = None
         self.event_stop = Event()
         self.remote_mode = False

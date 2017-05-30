@@ -17,9 +17,6 @@ from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
 
-log = Logger()
-
-
 def threadsafe(f):
     @wraps(f)
     def threadsafe_f(self, *args, **kwargs):
@@ -38,8 +35,6 @@ def write_on_text(text, content, clear=True):
 
 
 class Gui(Tk.Tk, PeerUi):
-    log = Logger()
-
     def __init__(self, name,
                  local_server_ip=None,
                  local_server_port=None,
@@ -48,6 +43,8 @@ class Gui(Tk.Tk, PeerUi):
                  tor_control_port=None,
                  local_mode=False):
         super(Gui, self).__init__()
+
+        self.log = Logger()
 
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)
