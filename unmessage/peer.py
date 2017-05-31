@@ -25,6 +25,7 @@ from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
 from txtorcon import TorClientEndpoint
 
+from . import __version__
 from . import elements
 from . import errors
 from . import notifications
@@ -65,6 +66,8 @@ class Peer(object):
 
     def __init__(self, name, ui=None):
         self.log = Logger()
+
+        self.log.info('{} {}'.format(APP_NAME, __version__))
 
         if not name:
             raise errors.InvalidNameError()
