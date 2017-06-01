@@ -45,20 +45,20 @@ class StdLibLogObserver(STDLibLogObserver):
         logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 
     def __call__(self, event):
-        failure = event.get('log_failure')
-        if failure is None:
-            excInfo = None
-        else:
-            excInfo = (failure.type,
-                       failure.value,
-                       failure.getTracebackObject())
-
-        level = event.get('log_level', LogLevel.info)
-        stdlibLevel = toStdlibLogLevelMapping.get(level, logging.INFO)
-
         text = self.formatEvent(event).strip()
 
         if text:
+            level = event.get('log_level', LogLevel.info)
+            stdlibLevel = toStdlibLogLevelMapping.get(level, logging.INFO)
+
+            failure = event.get('log_failure')
+            if failure is None:
+                excInfo = None
+            else:
+                excInfo = (failure.type,
+                           failure.value,
+                           failure.getTracebackObject())
+
             self.logger.log(stdlibLevel, text, exc_info=excInfo)
 
 
