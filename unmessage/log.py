@@ -4,8 +4,9 @@ import logging
 from twisted.logger import globalLogBeginner, Logger
 from twisted.logger import FilteringLogObserver, ILogFilterPredicate
 from twisted.logger import LogLevelFilterPredicate, LogLevel, PredicateResult
-from twisted.logger import ILogObserver, STDLibLogObserver, textFileLogObserver
-from zope.interface import implementer, provider
+from twisted.logger import STDLibLogObserver, textFileLogObserver
+from twisted.python.compat import _PY3
+from zope.interface import provider
 
 
 @provider(ILogFilterPredicate)
@@ -22,17 +23,47 @@ def get_filtering_observer(observer, log_level):
                                             filter_unmessage_event])
 
 
-@implementer(ILogObserver)
-class PrintObserver(object):
-    def __init__(self, format_event):
-        self.format_event = format_event
+# Mappings to Python's logging module
+toStdlibLogLevelMapping = {
+    LogLevel.debug: logging.DEBUG,
+    LogLevel.info: logging.INFO,
+    LogLevel.warn: logging.WARNING,
+    LogLevel.error: logging.ERROR,
+    LogLevel.critical: logging.CRITICAL,
+}
+
+
+class StdLibLogObserver(STDLibLogObserver):
+    def __init__(self, name, formatEvent):
+        super(StdLibLogObserver, self).__init__(name)
+
+        if _PY3:
+            self.formatEvent = formatEvent
+        else:
+            self.formatEvent = lambda event: formatEvent(event).encode('utf-8')
+
+        logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 
     def __call__(self, event):
-        print self.format_event(event),
+        failure = event.get('log_failure')
+        if failure is None:
+            excInfo = None
+        else:
+            excInfo = (failure.type,
+                       failure.value,
+                       failure.getTracebackObject())
+
+        level = event.get('log_level', LogLevel.info)
+        stdlibLevel = toStdlibLogLevelMapping.get(level, logging.INFO)
+
+        text = self.formatEvent(event).strip()
+
+        if text:
+            self.logger.log(stdlibLevel, text, exc_info=excInfo)
 
 
-def get_std_observer(name):
-    return STDLibLogObserver(name)
+def get_std_observer(name, format_event):
+    return StdLibLogObserver(name, format_event)
 
 
 def get_file_observer(filepath):
@@ -57,11 +88,8 @@ def begin_logging(filepath, log_level=LogLevel.info, begin_std=False):
     observers = [get_filtering_observer(file_observer, log_level)]
 
     if begin_std:
-        #print_observer = PrintObserver(file_observer.formatEvent)
-
-        logging.basicConfig(level=logging.DEBUG)
-        print_observer = get_std_observer('unmessage')
-
-        observers.append(get_filtering_observer(print_observer, log_level))
+        stdlib_observer = get_std_observer('unmessage',
+                                           file_observer.formatEvent)
+        observers.append(get_filtering_observer(stdlib_observer, log_level))
 
     globalLogBeginner.beginLoggingTo(observers)
