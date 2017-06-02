@@ -20,9 +20,11 @@ from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
+from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
 from txtorcon import TorClientEndpoint
 
+from . import __version__
 from . import elements
 from . import errors
 from . import notifications
@@ -62,6 +64,10 @@ class Peer(object):
     state_stopped = 'stopped'
 
     def __init__(self, name, ui=None):
+        self.log = Logger()
+
+        self.log.info('{} {}'.format(APP_NAME, __version__))
+
         if not name:
             raise errors.InvalidNameError()
 
@@ -121,6 +127,10 @@ class Peer(object):
     @property
     def _path_onion_service_dir(self):
         return os.path.join(self._path_tor_dir, 'onion-service')
+
+    @property
+    def path_log_file(self):
+        return os.path.join(self._path_peer_dir, 'peer.log')
 
     @property
     def _contacts(self):
@@ -196,6 +206,7 @@ class Peer(object):
         return self._state == Peer.state_running
 
     def _notify_bootstrap(self, status):
+        self.log.info(status)
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
 
     def _create_peer_dir(self):

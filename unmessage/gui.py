@@ -12,6 +12,7 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
+from .log import begin_logging, Logger, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -42,6 +43,8 @@ class Gui(Tk.Tk, PeerUi):
                  tor_control_port=None,
                  local_mode=False):
         super(Gui, self).__init__()
+
+        self.log = Logger()
 
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)
@@ -112,6 +115,9 @@ class Gui(Tk.Tk, PeerUi):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
         self.peer = Peer(name, self)
+
+        begin_logging(self.peer.path_log_file, LogLevel.debug, begin_std=True)
+
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,
