@@ -76,9 +76,9 @@ unMessage with::
 
 Launch unMessage with any of the commands::
 
-    (unmessage-env)$ unmessage-gui # graphical user interface (GUI)
-    (unmessage-env)$ unmessage-cli # command-line interface (CLI)
-    (unmessage-env)$ unmessage # last interface used
+    (unmessage-env)$ unmessage-gui  # graphical user interface (GUI)
+    (unmessage-env)$ unmessage-cli  # command-line interface (CLI)
+    (unmessage-env)$ unmessage      # last interface used
 
 Updating
 ''''''''
