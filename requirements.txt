@@ -1,8 +1,8 @@
-attrs==17.1.0
-opuslib>=1.1.0
-PyAudio>=0.2.10
-pyaxo>=0.7.3
-PyNaCl>=1.0.1
-pyperclip>=1.5.27
-Twisted[tls]>=16.6.0
-txtorcon>=0.19.0
+attrs==17.2.0
+opuslib==1.1.0
+PyAudio==0.2.11
+pyaxo==0.7.7
+PyNaCl==1.1.2
+pyperclip==1.5.27
+Twisted[tls]==17.1.0
+txtorcon==0.19.3
