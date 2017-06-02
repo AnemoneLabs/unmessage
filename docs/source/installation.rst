@@ -38,23 +38,26 @@ which can provide an updated **tor**, install it::
 
 Installing
 ----------
-Finally, if you use `pip`_ and `setuptools`_ (probably installed
-automatically with *pip*), you can easily install unMessage with::
+Finally, using `virtualenv`_, `pip`_ and `setuptools`_ (the latter
+probably installed automatically with *pip*), you can easily install
+unMessage with::
 
-    $ sudo pip install unmessage
+    $ virtualenv ~/unmessage-env
+    $ . ~/unmessage-env/bin/activate
+    (unmessage-env)$ pip install unmessage
 
 Launch unMessage with any of the commands::
 
-    $ unmessage-gui # graphical user interface (GUI)
-    $ unmessage-cli # command-line interface (CLI)
-    $ unmessage # last interface used
+    (unmessage-env)$ unmessage-gui # graphical user interface (GUI)
+    (unmessage-env)$ unmessage-cli # command-line interface (CLI)
+    (unmessage-env)$ unmessage # last interface used
 
 Updating
 --------
 If you installed unMessage with *pip*, you can also use it for
 updates::
 
-    $ sudo pip install --upgrade unmessage
+    (unmessage-env)$ pip install --upgrade unmessage
 
 Usage
 -----
@@ -75,3 +78,4 @@ All files used by unMessage are saved in ``~/.config/unMessage/``
 .. _`tor onion services`: https://www.torproject.org/docs/hidden-services.html
 .. _`twisted`: https://twistedmatrix.com
 .. _`txtorcon`: https://github.com/meejah/txtorcon
+.. _`virtualenv`: https://pypi.python.org/pypi/virtualenv
