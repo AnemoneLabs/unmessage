@@ -1,6 +1,14 @@
 ============
 Installation
 ============
+unMessage's installation is done in three steps:
+
+1. Install requirements
+2. Use a virtual environment
+3. Install unMessage
+
+Requirements
+============
 Install the following requirements via package manager::
 
     $ # If using Debian/Ubuntu
@@ -36,36 +44,68 @@ which can provide an updated **tor**, install it::
     $ # If using Fedora
     $ sudo dnf install tor
 
-Installing
-----------
-Finally, using `virtualenv`_, `pip`_ and `setuptools`_ (the latter
-probably installed automatically with *pip*), you can easily install
-unMessage with::
+Using a Virtual Environment
+===========================
+Install `virtualenv`_, `pip`_ and `setuptools`_::
 
-    $ virtualenv ~/unmessage-env
-    $ . ~/unmessage-env/bin/activate
+    $ # If using Debian/Ubuntu
+    $ sudo apt-get install python-virtualenv
+
+    $ # If using Fedora
+    $ sudo dnf install python-virtualenv
+
+Use a *virtual environment*::
+
+    $ virtualenv ~/unmessage-env      # create
+    $ . ~/unmessage-env/bin/activate  # activate
+    (unmessage-env)$                  # prompt shows which environtment is active
+
+Update *setuptools*, *pip* and *virtualenv*::
+
+    (unmessage-env)$ pip install --upgrade setuptools
+    (unmessage-env)$ pip install --upgrade pip
+    (unmessage-env)$ pip install --upgrade virtualenv
+
+Make sure that the update installs at least *pip* ``8`` and
+*setuptools* ``19.4``.
+
+Installing
+==========
+Finally, install unMessage::
+
     (unmessage-env)$ pip install unmessage
 
 Launch unMessage with any of the commands::
 
-    (unmessage-env)$ unmessage-gui # graphical user interface (GUI)
-    (unmessage-env)$ unmessage-cli # command-line interface (CLI)
-    (unmessage-env)$ unmessage # last interface used
+    (unmessage-env)$ unmessage-gui  # graphical user interface (GUI)
+    (unmessage-env)$ unmessage-cli  # command-line interface (CLI)
+    (unmessage-env)$ unmessage      # last interface used
+
+Make sure to activate the *virtual environment* whenever you wish to
+use unMessage::
+
+    $ . ~/unmessage-env/bin/activate
+
+As well as deactivate it when you are done::
+
+
+    (unmessage-env)$ deactivate
 
 Updating
---------
-If you installed unMessage with *pip*, you can also use it for
-updates::
+========
+*pip* can also be used to update unMessage::
 
     (unmessage-env)$ pip install --upgrade unmessage
 
+=====
 Usage
------
+=====
 unMessage offers usage instructions for both interfaces:
 :ref:`sec-gui` and :ref:`sec-cli`.
 
+===========
 Persistence
------------
+===========
 All files used by unMessage are saved in ``~/.config/unMessage/``
 
 .. _`cryptully`: https://github.com/shanet/Cryptully
