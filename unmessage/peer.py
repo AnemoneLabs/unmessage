@@ -1411,10 +1411,10 @@ class ElementParser:
             pass
 
 
-class _ConversationFactory(Factory):
-    def __init__(self, peer, connection_made):
-        self.peer = peer
-        self.connection_made = connection_made
+@attr.s
+class _ConversationFactory(Factory, object):
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    connection_made = attr.ib()
 
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
