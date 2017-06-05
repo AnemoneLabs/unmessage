@@ -67,8 +67,7 @@ class Peer(object):
 
         self._info = PeerInfo(port_local_server=PORT)
         self._name = name
-        self._persistence = Persistence(dbname=self._path_peer_db,
-                                        dbpassphrase=None)
+        self._persistence = Persistence(dbname=self._path_peer_db)
         self._axolotl = None
         self._conversations = dict()
         self._inbound_requests = dict()
@@ -1483,7 +1482,7 @@ class PeerInfo:
 
 
 class Persistence:
-    def __init__(self, dbname, dbpassphrase):
+    def __init__(self, dbname, dbpassphrase=None):
         self.dbname = dbname
         self.dbpassphrase = dbpassphrase
         self.db = self._open_db()
