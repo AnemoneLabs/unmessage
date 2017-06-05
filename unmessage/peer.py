@@ -1561,7 +1561,7 @@ class Persistence(object):
                     peer''')
             row = cur.fetchone()
         if row:
-            onion_service_key = row['onion_service_key']
+            onion_service_key = str(row['onion_service_key'])
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
             port_local_server = int(row['port_local_server'])
