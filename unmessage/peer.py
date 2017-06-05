@@ -1471,14 +1471,24 @@ class _ConversationProtocol(NetstringReceiver, object):
         self.sendString(string)
 
 
-class PeerInfo:
-    def __init__(self, name=None, port_local_server=None, identity_keys=None,
-                 onion_service_key=None, contacts=None):
-        self.name = name
-        self.port_local_server = port_local_server
-        self.identity_keys = identity_keys
-        self.onion_service_key = onion_service_key
-        self.contacts = contacts or dict()
+@attr.s
+class PeerInfo(object):
+    name = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    port_local_server = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(int)),
+        default=None)
+    identity_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    onion_service_key = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    contacts = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(dict)),
+        default=None)
 
 
 @attr.s
