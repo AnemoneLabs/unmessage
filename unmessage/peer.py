@@ -1481,10 +1481,15 @@ class PeerInfo:
         self.contacts = contacts or dict()
 
 
-class Persistence:
-    def __init__(self, dbname, dbpassphrase=None):
-        self.dbname = dbname
-        self.dbpassphrase = dbpassphrase
+@attr.s
+class Persistence(object):
+    dbname = attr.ib(validator=attr.validators.instance_of(str))
+    dbpassphrase = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(dict)),
+        default=None)
+    db = attr.ib(default=None)
+
+    def __attrs_post_init__(self):
         self.db = self._open_db()
 
     def _open_db(self):
