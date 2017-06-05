@@ -1423,15 +1423,16 @@ class _ConversationFactory(Factory, object):
         self.peer._ui.notify_error(error)
 
 
-class _ConversationProtocol(NetstringReceiver):
+@attr.s
+class _ConversationProtocol(NetstringReceiver, object):
     type_regular = 'reg'
     type_untalk = elements.UntalkElement.type_
 
-    def __init__(self, factory, connection_made):
-        self.factory = factory
-        self.connection_made = connection_made
-        self.manager = None
-        self.type_ = None
+    factory = attr.ib(
+        validator=attr.validators.instance_of(_ConversationFactory))
+    connection_made = attr.ib()
+    manager = attr.ib(init=False, default=None)
+    type_ = attr.ib(init=False, default=None)
 
     def connectionMade(self):
         self.connection_made(self)
