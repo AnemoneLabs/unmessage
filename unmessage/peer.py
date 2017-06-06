@@ -33,7 +33,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address, is_valid_identity
+from .utils import Address, is_valid_identity, raise_invalid_shared_key
 from .smp import SMP
 
 
@@ -1236,23 +1236,24 @@ class Conversation(object):
         return self.auth_session
 
 
-class ConversationKeys:
+@attr.s
+class ConversationKeys(object):
     handshake_enc_salt = b'\x00'
-
     iv_hash_salt = b'\x01'
     payload_hash_salt = b'\x02'
-
     auth_secret_salt = b'\x03'
 
-    def __init__(self, key):
-        self.key = key
+    key = attr.ib(validator=raise_invalid_shared_key)
+    handshake_enc_key = attr.ib(init=False)
+    iv_hash_key = attr.ib(init=False)
+    payload_hash_key = attr.ib(init=False)
+    auth_secret_key = attr.ib(init=False)
 
-        self.handshake_enc_key = pyaxo.kdf(key, self.handshake_enc_salt)
-
-        self.iv_hash_key = pyaxo.kdf(key, self.iv_hash_salt)
-        self.payload_hash_key = pyaxo.kdf(key, self.payload_hash_salt)
-
-        self.auth_secret_key = pyaxo.kdf(key, self.auth_secret_salt)
+    def __attrs_post_init__(self):
+        self.handshake_enc_key = pyaxo.kdf(self.key, self.handshake_enc_salt)
+        self.iv_hash_key = pyaxo.kdf(self.key, self.iv_hash_salt)
+        self.payload_hash_key = pyaxo.kdf(self.key, self.payload_hash_salt)
+        self.auth_secret_key = pyaxo.kdf(self.key, self.auth_secret_salt)
 
 
 @attr.s
