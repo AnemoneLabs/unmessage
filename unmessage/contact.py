@@ -1,13 +1,13 @@
 import attr
 
 from . import errors
-from .utils import Address, is_valid_identity, is_valid_pub_key
+from .utils import Address, is_valid_identity, raise_invalid_pub_key
 
 
 @attr.s
 class Contact(object):
     identity = attr.ib()
-    key = attr.ib()
+    key = attr.ib(validator=raise_invalid_pub_key)
     is_verified = attr.ib(default=False)
     has_presence = attr.ib(default=False)
 
@@ -15,11 +15,6 @@ class Contact(object):
     def validate_identity(self, attribute, value):
         if not is_valid_identity(value):
             raise errors.InvalidIdentityError()
-
-    @key.validator
-    def validate_key(self, attribute, value):
-        if not is_valid_pub_key(value):
-            raise errors.InvalidPublicKeyError()
 
     @property
     def name(self):
