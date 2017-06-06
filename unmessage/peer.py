@@ -1304,9 +1304,9 @@ class AuthSession(object):
             return None
 
 
-class ElementParser:
-    def __init__(self, peer):
-        self.peer = peer
+@attr.s
+class ElementParser(object):
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
 
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
