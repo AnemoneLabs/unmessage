@@ -1255,10 +1255,13 @@ class ConversationKeys:
         self.auth_secret_key = pyaxo.kdf(key, self.auth_secret_salt)
 
 
-class AuthSession:
-    def __init__(self, buffer_=None):
-        self.smp = None
-        self.buffer_ = buffer_
+@attr.s
+class AuthSession(object):
+    buffer_ = attr.ib(default=None)
+    smp = attr.ib(init=False, default=None)
+    step = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         if self.buffer_:
             # start from step 2 as the initial buffer was received from the
             # other party, who started the session
