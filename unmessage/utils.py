@@ -37,6 +37,11 @@ def is_valid_identity(value):
             Regex.peer_identity.match(value) is not None)
 
 
+def raise_invalid_identity(instance=None, attribute=None, value=None):
+    if not is_valid_identity(value):
+        raise errors.InvalidIdentityError()
+
+
 def is_valid_curve25519_key(value):
     return isinstance(value, bytes) and len(value) == PublicKey.SIZE
 
