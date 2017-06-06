@@ -1497,7 +1497,7 @@ class Persistence(object):
     dbpassphrase = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(dict)),
         default=None)
-    db = attr.ib(default=None)
+    db = attr.ib(init=False)
 
     def __attrs_post_init__(self):
         self.db = self._open_db()
