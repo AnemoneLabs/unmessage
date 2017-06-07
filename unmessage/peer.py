@@ -1492,7 +1492,7 @@ class PeerInfo(object):
         default=None)
     contacts = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(dict)),
-        default=None)
+        default=attr.Factory(dict))
 
 
 @attr.s
