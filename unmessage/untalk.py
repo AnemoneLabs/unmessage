@@ -4,6 +4,7 @@ from Queue import Queue
 from threading import Thread
 from time import time
 
+import attr
 import pyaudio
 import pyaxo
 from nacl.secret import SecretBox
@@ -15,6 +16,7 @@ from opuslib.api import encoder as opus_encoder
 from . import errors
 from . import notifications
 from .elements import UntalkElement
+from .utils import raise_invalid_pub_key
 
 
 FORMAT = pyaudio.paInt16
@@ -33,6 +35,7 @@ DECODE_FEC = False
 MAC_SIZE = 16
 
 
+@attr.s
 class UntalkSession(object):
     type_ = UntalkElement.type_
     state_sent = 'sent'
@@ -40,35 +43,47 @@ class UntalkSession(object):
     state_talking = 'talk'
     state_stopped = 'stop'
 
-    def __init__(self, conversation, other_handshake_key=None):
-        self.conversation = conversation
-        self.other_handshake_key = other_handshake_key
-        self.connection = None
-        self.handshake_keys = pyaxo.generate_keypair()
-        if other_handshake_key:
+    conversation = attr.ib()
+    other_handshake_key = attr.ib(
+        validator=attr.validators.optional(raise_invalid_pub_key),
+        default=None)
+    connection = attr.ib(init=False, default=None)
+    handshake_keys = attr.ib(
+        init=False,
+        default=attr.Factory(pyaxo.generate_keypair))
+    state = attr.ib(init=False)
+    shared_key = attr.ib(init=False, default=None)
+
+    thread_listen = attr.ib(init=False)
+    thread_speak = attr.ib(init=False)
+
+    jitter_buffer = attr.ib(init=False, default=None)
+    codec = attr.ib(init=False, default=None)
+    audio_listen = attr.ib(init=False)
+    audio_speak = attr.ib(init=False)
+    stream_in = attr.ib(init=False, default=None)
+    stream_out = attr.ib(init=False, default=None)
+
+    input_device = attr.ib(init=False, default=None)
+    output_device = attr.ib(init=False, default=None)
+    frame_size = attr.ib(init=False, default=FRAME_SIZE)
+    loss_percentage = attr.ib(init=False, default=LOSS_PERCENTAGE)
+    decode_fec = attr.ib(init=False, default=DECODE_FEC)
+
+    def __attrs_post_init__(self):
+        if self.other_handshake_key:
             self.state = UntalkSession.state_received
         else:
             self.state = UntalkSession.state_sent
-        self.shared_key = None
 
         self.thread_listen = Thread(target=self.listen)
         self.thread_listen.daemon = True
         self.thread_speak = Thread(target=self.speak)
         self.thread_speak.daemon = True
 
-        self.jitter_buffer = None
-        self.codec = None
         with suppress_alsa_errors():
             self.audio_listen = pyaudio.PyAudio()
             self.audio_speak = pyaudio.PyAudio()
-        self.stream_in = None
-        self.stream_out = None
-
-        self.input_device = None
-        self.output_device = None
-        self.frame_size = FRAME_SIZE
-        self.loss_percentage = LOSS_PERCENTAGE
-        self.decode_fec = DECODE_FEC
 
     @property
     def is_talking(self):
