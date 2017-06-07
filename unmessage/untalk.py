@@ -302,15 +302,19 @@ class UntalkSession(object):
         self.audio_speak.terminate()
 
 
-class OpusCodec:
+@attr.s
+class OpusCodec(object):
     """
     opuslib from:
     https://github.com/OnBeep/opuslib
     OpusCodec class modified from:
     https://stackoverflow.com/questions/17728706/python-portaudio-opus-encoding-decoding
     """
-    def __init__(self, untalk):
-        self.untalk = untalk
+    untalk = attr.ib(validator=attr.validators.instance_of(UntalkSession))
+    encoder = attr.ib(init=False)
+    decoder = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         self.encoder = opus_encoder.create(SAMPLE_RATE,
                                            CHANNELS,
                                            opus_constants.APPLICATION_VOIP)
