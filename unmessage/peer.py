@@ -14,7 +14,7 @@ import pyperclip
 import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
-from pyaxo import Axolotl, Keypair, a2b, b2a
+from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import connectProtocol
@@ -1041,34 +1041,44 @@ class Introduction(Thread):
             'An unknown peer has disconnected without sending any data'))
 
 
+@attr.s
 class Conversation(object):
     state_in_req = 'in_req'
     state_out_req = 'out_req'
     state_conv = 'conv'
 
-    def __init__(self, peer, contact,
-                 request_keys=None, keys=None, axolotl=None, connection=None):
-        self.peer = peer
-        self.ui = ConversationUi()
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    contact = attr.ib(validator=attr.validators.instance_of(Contact))
+    request_keys = attr.ib(default=None)
+    keys = attr.ib(default=None)
+    axolotl = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(AxolotlConversation)),
+        default=None)
+    connection = attr.ib(default=None)
 
-        self.contact = contact
-        self.request_keys = request_keys
-        self.keys = keys
-        self.axolotl = axolotl
-        self.auth_session = None
+    ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
 
-        self._managers = dict()
-        self.connection = connection
-        self.queue_in_data = Queue()
-        self.queue_out_data = Queue()
-        self.queue_in_packets = Queue()
-        self.queue_out_packets = Queue()
+    auth_session = attr.ib(init=False, default=None)
 
-        self.elements = dict()
-        self.elements_lock = Lock()
+    _managers = attr.ib(init=False, default=attr.Factory(dict))
 
-        self.is_active = False
+    queue_in_data = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_out_packets = attr.ib(init=False, default=attr.Factory(Queue))
 
+    elements = attr.ib(init=False, default=attr.Factory(dict))
+    elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
+
+    is_active = attr.ib(init=False, default=False)
+
+    thread_in_data = attr.ib(init=False)
+    thread_out_data = attr.ib(init=False)
+    thread_in_packets = attr.ib(init=False)
+    thread_out_packets = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         self.thread_in_data = Thread(target=self.check_in_data)
         self.thread_in_data.daemon = True
         self.thread_out_data = Thread(target=self.check_out_data)
