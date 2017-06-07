@@ -33,7 +33,9 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address, is_valid_identity, raise_invalid_shared_key
+from .utils import Address
+from .utils import is_valid_identity
+from .utils import raise_invalid_name, raise_invalid_shared_key
 from .smp import SMP
 
 
@@ -56,45 +58,52 @@ TOR_SOCKS_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
+@attr.s
 class Peer(object):
     state_created = 'created'
     state_running = 'running'
     state_stopped = 'stopped'
 
-    def __init__(self, name, ui=None):
-        if not name:
-            raise errors.InvalidNameError()
+    _peer_name = attr.ib(validator=raise_invalid_name)
+    _ui = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerUi)),
+        default=attr.Factory(PeerUi))
 
+    _info = attr.ib(init=False)
+    _persistence = attr.ib(init=False)
+    _axolotl = attr.ib(init=False, default=None)
+    _conversations = attr.ib(init=False, default=attr.Factory(dict))
+    _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
+    _outbound_requests = attr.ib(init=False, default=attr.Factory(dict))
+    _element_parser = attr.ib(init=False)
+
+    _tor = attr.ib(init=False, default=None)
+    _onion_service = attr.ib(init=False, default=None)
+    _port_tor_socks = attr.ib(init=False, default=TOR_SOCKS_PORT)
+    _port_tor_control = attr.ib(init=False, default=TOR_CONTROL_PORT)
+
+    _ip_local_server = attr.ib(init=False, default=HOST)
+    _local_mode = attr.ib(init=False, default=False)
+
+    _twisted_reactor = attr.ib(init=False, default=reactor)
+    _twisted_server_endpoint = attr.ib(init=False, default=None)
+    _twisted_factory = attr.ib(init=False, default=None)
+
+    _managers_conv = attr.ib(init=False, default=attr.Factory(list))
+
+    _presence_convs = attr.ib(init=False, default=attr.Factory(list))
+    _presence_event = attr.ib(init=False, default=attr.Factory(Event))
+
+    _event_stop = attr.ib(init=False, default=attr.Factory(Event))
+
+    _state = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         self._info = PeerInfo(port_local_server=PORT)
-        self._name = name
+        self._name = self._peer_name
         self._persistence = Persistence(dbname=self._path_peer_db)
-        self._axolotl = None
-        self._conversations = dict()
-        self._inbound_requests = dict()
-        self._outbound_requests = dict()
         self._element_parser = ElementParser(self)
-
-        self._tor = None
-        self._onion_service = None
-        self._port_tor_socks = TOR_SOCKS_PORT
-        self._port_tor_control = TOR_CONTROL_PORT
-
-        self._ip_local_server = HOST
-        self._local_mode = False
-
-        self._twisted_reactor = reactor
-        self._twisted_server_endpoint = None
-        self._twisted_factory = None
-
-        self._managers_conv = list()
-
-        self._presence_convs = list()
-        self._presence_event = Event()
-
-        self._event_stop = Event()
-
-        self._ui = ui or PeerUi()
-
         self._state = Peer.state_created
 
     @property
