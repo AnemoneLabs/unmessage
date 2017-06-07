@@ -32,6 +32,16 @@ Regex.peer_identity = Regex(r'{}@{}:{}'.format(Regex.peer_name.pattern,
                                                Regex.address_port.pattern))
 
 
+def is_valid_name(value):
+    return (isinstance(value, str) and
+            Regex.peer_name.match(value) is not None)
+
+
+def raise_invalid_name(instance=None, attribute=None, value=None):
+    if not is_valid_name(value):
+        raise errors.InvalidNameError()
+
+
 def is_valid_identity(value):
     return (isinstance(value, str) and
             Regex.peer_identity.match(value) is not None)
