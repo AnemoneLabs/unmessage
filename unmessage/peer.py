@@ -101,6 +101,8 @@ class Peer(object):
 
     _state = attr.ib(init=False)
 
+    log = attr.ib(init=False)
+
     def __attrs_post_init__(self):
         self.log = Logger()
         self.log.info('{} {}'.format(APP_NAME, __version__))
