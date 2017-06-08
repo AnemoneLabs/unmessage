@@ -1338,7 +1338,7 @@ class AuthSession(object):
 
 @attr.s
 class ElementParser(object):
-    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
@@ -1447,8 +1447,8 @@ class ElementParser(object):
 
 @attr.s
 class _ConversationFactory(Factory, object):
-    peer = attr.ib(validator=attr.validators.instance_of(Peer))
-    connection_made = attr.ib()
+    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
+    connection_made = attr.ib(repr=False)
 
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
