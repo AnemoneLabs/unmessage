@@ -115,7 +115,7 @@ def test_build_reply_packet(iv,
             len(handshake_key) == packets.ENC_KEY_LEN and
             len(payload)):
         assert isinstance(packets.build_reply_packet(data),
-                          packets.RegularPacket)
+                          packets.ReplyPacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
             packets.build_reply_packet(data)
