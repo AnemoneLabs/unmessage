@@ -65,67 +65,36 @@ def is_valid_empty(value):
     return is_valid_length(value, 0)
 
 
-def check_iv(packet):
-    assert len(a2b(packet.iv)) == IV_LEN
-    assert len(a2b(packet.iv_hash)) == HASH_LEN
-
-
-def check_payload(packet):
-    assert len(a2b(packet.payload_hash)) == HASH_LEN
-    a2b(packet.payload)
-
-
 @raise_malformed
 def build_intro_packet(data):
     lines = data.splitlines()
     packet = IntroductionPacket(iv=lines[0],
                                 iv_hash=lines[1],
                                 data=data)
-
-    check_iv(packet)
-
     return packet
 
 
 @raise_malformed
 def build_regular_packet(data):
     packet = RegularPacket(*data.splitlines())
-
-    check_payload(packet)
-    assert not len(a2b(packet.handshake_key))
-
     return packet
 
 
 @raise_malformed
 def build_reply_packet(data):
     packet = ReplyPacket(*data.splitlines())
-
-    check_payload(packet)
-    assert len(a2b(packet.handshake_key)) == ENC_KEY_LEN
-
     return packet
 
 
 @raise_malformed
 def build_request_packet(data):
     packet = RequestPacket(*data.splitlines())
-
-    assert len(a2b(packet.handshake_packet_hash)) == HASH_LEN
-    assert len(a2b(packet.request_key)) == KEY_LEN
-    a2b(packet.handshake_packet)
-
     return packet
 
 
 @raise_malformed
 def build_handshake_packet(data):
     packet = HandshakePacket(*data.splitlines())
-
-    assert len(a2b(packet.identity_key)) == KEY_LEN
-    assert len(a2b(packet.handshake_key)) == KEY_LEN
-    assert len(a2b(packet.ratchet_key)) == KEY_LEN
-
     return packet
 
 
