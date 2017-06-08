@@ -1,14 +1,31 @@
-class InboundRequest:
-    def __init__(self, conversation, packet):
-        self.conversation = conversation
-        self.packet = packet
+import attr
+from pyaxo import Keypair
+
+from .packets import RequestPacket
 
 
-class OutboundRequest:
-    def __init__(self, conversation,
-                 handshake_keys=None, ratchet_keys=None,
-                 packet=None):
-        self.conversation = conversation
-        self.handshake_keys = handshake_keys
-        self.ratchet_keys = ratchet_keys
-        self.packet = packet
+@attr.s
+class InboundRequest(object):
+    conversation = attr.ib()
+    packet = attr.ib(validator=attr.validators.instance_of(RequestPacket))
+
+
+@attr.s
+class OutboundRequest(object):
+    conversation = attr.ib()
+    request_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    handshake_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    ratchet_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    packet = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(RequestPacket)),
+        default=None)

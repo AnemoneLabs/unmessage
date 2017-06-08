@@ -3,6 +3,8 @@ import re
 import attr
 from nacl.public import PublicKey
 
+from . import errors
+
 
 @attr.s
 class Address(object):
@@ -30,10 +32,52 @@ Regex.peer_identity = Regex(r'{}@{}:{}'.format(Regex.peer_name.pattern,
                                                Regex.address_port.pattern))
 
 
+def is_valid_name(value):
+    return (isinstance(value, str) and
+            Regex.peer_name.match(value) is not None)
+
+
+def raise_invalid_name(instance=None, attribute=None, value=None):
+    if not is_valid_name(value):
+        raise errors.InvalidNameError()
+
+
 def is_valid_identity(value):
     return (isinstance(value, str) and
             Regex.peer_identity.match(value) is not None)
 
 
-def is_valid_pub_key(value):
+def raise_invalid_identity(instance=None, attribute=None, value=None):
+    if not is_valid_identity(value):
+        raise errors.InvalidIdentityError()
+
+
+def is_valid_curve25519_key(value):
     return isinstance(value, bytes) and len(value) == PublicKey.SIZE
+
+
+def is_valid_priv_key(value):
+    return is_valid_curve25519_key(value)
+
+
+def raise_invalid_priv_key(instance=None, attribute=None, value=None):
+    if not is_valid_priv_key(value):
+        raise errors.InvalidPrivateError()
+
+
+def is_valid_pub_key(value):
+    return is_valid_curve25519_key(value)
+
+
+def raise_invalid_pub_key(instance=None, attribute=None, value=None):
+    if not is_valid_pub_key(value):
+        raise errors.InvalidPublicKeyError()
+
+
+def is_valid_shared_key(value):
+    return is_valid_curve25519_key(value)
+
+
+def raise_invalid_shared_key(instance=None, attribute=None, value=None):
+    if not is_valid_shared_key(value):
+        raise errors.InvalidSharedKeyError()

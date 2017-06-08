@@ -51,11 +51,25 @@ class InvalidIdentityError(UnmessageError):
             message='The identity provided is not valid')
 
 
+class InvalidPrivateKeyError(UnmessageError):
+    def __init__(self):
+        super(InvalidPrivateKeyError, self).__init__(
+            title='Value error',
+            message='The private key provided is not valid')
+
+
 class InvalidPublicKeyError(UnmessageError):
     def __init__(self):
         super(InvalidPublicKeyError, self).__init__(
             title='Value error',
             message='The public key provided is not valid')
+
+
+class InvalidSharedKeyError(UnmessageError):
+    def __init__(self):
+        super(InvalidSharedKeyError, self).__init__(
+            title='Value error',
+            message='The shared key provided is not valid')
 
 
 class InvalidNameError(UnmessageError):

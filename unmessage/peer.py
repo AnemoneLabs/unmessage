@@ -14,7 +14,7 @@ import pyperclip
 import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
-from pyaxo import Axolotl, Keypair, a2b, b2a
+from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import connectProtocol
@@ -35,7 +35,9 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address, is_valid_identity
+from .utils import Address
+from .utils import is_valid_identity
+from .utils import raise_invalid_name, raise_invalid_shared_key
 from .smp import SMP
 
 
@@ -58,50 +60,55 @@ TOR_SOCKS_PORT = 9054
 TOR_CONTROL_PORT = 9055
 
 
+@attr.s
 class Peer(object):
     state_created = 'created'
     state_running = 'running'
     state_stopped = 'stopped'
 
-    def __init__(self, name, ui=None):
-        self.log = Logger()
+    _peer_name = attr.ib(validator=raise_invalid_name)
+    _ui = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerUi)),
+        default=attr.Factory(PeerUi))
 
+    _info = attr.ib(init=False)
+    _persistence = attr.ib(init=False)
+    _axolotl = attr.ib(init=False, default=None)
+    _conversations = attr.ib(init=False, default=attr.Factory(dict))
+    _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
+    _outbound_requests = attr.ib(init=False, default=attr.Factory(dict))
+    _element_parser = attr.ib(init=False)
+
+    _tor = attr.ib(init=False, default=None)
+    _onion_service = attr.ib(init=False, default=None)
+    _port_tor_socks = attr.ib(init=False, default=TOR_SOCKS_PORT)
+    _port_tor_control = attr.ib(init=False, default=TOR_CONTROL_PORT)
+
+    _ip_local_server = attr.ib(init=False, default=HOST)
+    _local_mode = attr.ib(init=False, default=False)
+
+    _twisted_reactor = attr.ib(init=False, default=reactor)
+    _twisted_server_endpoint = attr.ib(init=False, default=None)
+    _twisted_factory = attr.ib(init=False, default=None)
+
+    _managers_conv = attr.ib(init=False, default=attr.Factory(list))
+
+    _presence_convs = attr.ib(init=False, default=attr.Factory(list))
+    _presence_event = attr.ib(init=False, default=attr.Factory(Event))
+
+    _event_stop = attr.ib(init=False, default=attr.Factory(Event))
+
+    _state = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
+        self.log = Logger()
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
-        if not name:
-            raise errors.InvalidNameError()
-
         self._info = PeerInfo(port_local_server=PORT)
-        self._name = name
-        self._persistence = Persistence(dbname=self._path_peer_db,
-                                        dbpassphrase=None)
-        self._axolotl = None
-        self._conversations = dict()
-        self._inbound_requests = dict()
-        self._outbound_requests = dict()
+        self._name = self._peer_name
+        self._persistence = Persistence(dbname=self._path_peer_db)
         self._element_parser = ElementParser(self)
-
-        self._tor = None
-        self._onion_service = None
-        self._port_tor_socks = TOR_SOCKS_PORT
-        self._port_tor_control = TOR_CONTROL_PORT
-
-        self._ip_local_server = HOST
-        self._local_mode = False
-
-        self._twisted_reactor = reactor
-        self._twisted_server_endpoint = None
-        self._twisted_factory = None
-
-        self._managers_conv = list()
-
-        self._presence_convs = list()
-        self._presence_event = Event()
-
-        self._event_stop = Event()
-
-        self._ui = ui or PeerUi()
-
         self._state = Peer.state_created
 
     @property
@@ -1053,34 +1060,44 @@ class Introduction(Thread):
             'An unknown peer has disconnected without sending any data'))
 
 
+@attr.s
 class Conversation(object):
     state_in_req = 'in_req'
     state_out_req = 'out_req'
     state_conv = 'conv'
 
-    def __init__(self, peer, contact,
-                 request_keys=None, keys=None, axolotl=None, connection=None):
-        self.peer = peer
-        self.ui = ConversationUi()
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    contact = attr.ib(validator=attr.validators.instance_of(Contact))
+    request_keys = attr.ib(default=None)
+    keys = attr.ib(default=None)
+    axolotl = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(AxolotlConversation)),
+        default=None)
+    connection = attr.ib(default=None)
 
-        self.contact = contact
-        self.request_keys = request_keys
-        self.keys = keys
-        self.axolotl = axolotl
-        self.auth_session = None
+    ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
 
-        self._managers = dict()
-        self.connection = connection
-        self.queue_in_data = Queue()
-        self.queue_out_data = Queue()
-        self.queue_in_packets = Queue()
-        self.queue_out_packets = Queue()
+    auth_session = attr.ib(init=False, default=None)
 
-        self.elements = dict()
-        self.elements_lock = Lock()
+    _managers = attr.ib(init=False, default=attr.Factory(dict))
 
-        self.is_active = False
+    queue_in_data = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
+    queue_out_packets = attr.ib(init=False, default=attr.Factory(Queue))
 
+    elements = attr.ib(init=False, default=attr.Factory(dict))
+    elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
+
+    is_active = attr.ib(init=False, default=False)
+
+    thread_in_data = attr.ib(init=False)
+    thread_out_data = attr.ib(init=False)
+    thread_in_packets = attr.ib(init=False)
+    thread_out_packets = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         self.thread_in_data = Thread(target=self.check_in_data)
         self.thread_in_data.daemon = True
         self.thread_out_data = Thread(target=self.check_out_data)
@@ -1248,29 +1265,33 @@ class Conversation(object):
         return self.auth_session
 
 
-class ConversationKeys:
+@attr.s
+class ConversationKeys(object):
     handshake_enc_salt = b'\x00'
-
     iv_hash_salt = b'\x01'
     payload_hash_salt = b'\x02'
-
     auth_secret_salt = b'\x03'
 
-    def __init__(self, key):
-        self.key = key
+    key = attr.ib(validator=raise_invalid_shared_key)
+    handshake_enc_key = attr.ib(init=False)
+    iv_hash_key = attr.ib(init=False)
+    payload_hash_key = attr.ib(init=False)
+    auth_secret_key = attr.ib(init=False)
 
-        self.handshake_enc_key = pyaxo.kdf(key, self.handshake_enc_salt)
+    def __attrs_post_init__(self):
+        self.handshake_enc_key = pyaxo.kdf(self.key, self.handshake_enc_salt)
+        self.iv_hash_key = pyaxo.kdf(self.key, self.iv_hash_salt)
+        self.payload_hash_key = pyaxo.kdf(self.key, self.payload_hash_salt)
+        self.auth_secret_key = pyaxo.kdf(self.key, self.auth_secret_salt)
 
-        self.iv_hash_key = pyaxo.kdf(key, self.iv_hash_salt)
-        self.payload_hash_key = pyaxo.kdf(key, self.payload_hash_salt)
 
-        self.auth_secret_key = pyaxo.kdf(key, self.auth_secret_salt)
+@attr.s
+class AuthSession(object):
+    buffer_ = attr.ib(default=None)
+    smp = attr.ib(init=False, default=None)
+    step = attr.ib(init=False)
 
-
-class AuthSession:
-    def __init__(self, buffer_=None):
-        self.smp = None
-        self.buffer_ = buffer_
+    def __attrs_post_init__(self):
         if self.buffer_:
             # start from step 2 as the initial buffer was received from the
             # other party, who started the session
@@ -1313,9 +1334,9 @@ class AuthSession:
             return None
 
 
-class ElementParser:
-    def __init__(self, peer):
-        self.peer = peer
+@attr.s
+class ElementParser(object):
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
 
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
@@ -1422,10 +1443,10 @@ class ElementParser:
             pass
 
 
-class _ConversationFactory(Factory):
-    def __init__(self, peer, connection_made):
-        self.peer = peer
-        self.connection_made = connection_made
+@attr.s
+class _ConversationFactory(Factory, object):
+    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    connection_made = attr.ib()
 
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
@@ -1434,15 +1455,16 @@ class _ConversationFactory(Factory):
         self.peer._ui.notify_error(error)
 
 
-class _ConversationProtocol(NetstringReceiver):
+@attr.s
+class _ConversationProtocol(NetstringReceiver, object):
     type_regular = 'reg'
     type_untalk = elements.UntalkElement.type_
 
-    def __init__(self, factory, connection_made):
-        self.factory = factory
-        self.connection_made = connection_made
-        self.manager = None
-        self.type_ = None
+    factory = attr.ib(
+        validator=attr.validators.instance_of(_ConversationFactory))
+    connection_made = attr.ib()
+    manager = attr.ib(init=False, default=None)
+    type_ = attr.ib(init=False, default=None)
 
     def connectionMade(self):
         self.connection_made(self)
@@ -1482,20 +1504,35 @@ class _ConversationProtocol(NetstringReceiver):
         self.sendString(string)
 
 
-class PeerInfo:
-    def __init__(self, name=None, port_local_server=None, identity_keys=None,
-                 onion_service_key=None, contacts=None):
-        self.name = name
-        self.port_local_server = port_local_server
-        self.identity_keys = identity_keys
-        self.onion_service_key = onion_service_key
-        self.contacts = contacts or dict()
+@attr.s
+class PeerInfo(object):
+    name = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    port_local_server = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(int)),
+        default=None)
+    identity_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    onion_service_key = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    contacts = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(dict)),
+        default=attr.Factory(dict))
 
 
-class Persistence:
-    def __init__(self, dbname, dbpassphrase):
-        self.dbname = dbname
-        self.dbpassphrase = dbpassphrase
+@attr.s
+class Persistence(object):
+    dbname = attr.ib(validator=attr.validators.instance_of(str))
+    dbpassphrase = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(dict)),
+        default=None)
+    db = attr.ib(init=False)
+
+    def __attrs_post_init__(self):
         self.db = self._open_db()
 
     def _open_db(self):
@@ -1557,7 +1594,7 @@ class Persistence:
                     peer''')
             row = cur.fetchone()
         if row:
-            onion_service_key = row['onion_service_key']
+            onion_service_key = str(row['onion_service_key'])
             identity_keys = Keypair(a2b(row['priv_identity_key']),
                                     a2b(row['pub_identity_key']))
             port_local_server = int(row['port_local_server'])
