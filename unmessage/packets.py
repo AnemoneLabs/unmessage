@@ -63,7 +63,7 @@ def build_regular_packet(data):
 
 @raise_malformed
 def build_reply_packet(data):
-    packet = RegularPacket(*data.splitlines())
+    packet = ReplyPacket(*data.splitlines())
 
     check_payload(packet)
     assert len(a2b(packet.handshake_key)) == ENC_KEY_LEN
@@ -127,6 +127,10 @@ class RegularPacket:
                              self.payload_hash,
                              self.handshake_key,
                              self.payload])
+
+
+class ReplyPacket(RegularPacket):
+    pass
 
 
 class RequestPacket:
