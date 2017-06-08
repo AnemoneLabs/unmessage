@@ -9,9 +9,15 @@ from twisted.python.compat import _PY3
 from zope.interface import provider
 
 
+NAMESPACES = [
+    'unmessage.__main__',
+    'unmessage.peer',
+]
+
+
 @provider(ILogFilterPredicate)
 def filter_unmessage_event(event):
-    if event['log_namespace'].startswith('unmessage'):
+    if event['log_namespace'] in NAMESPACES:
         return PredicateResult.yes
     else:
         return PredicateResult.no
