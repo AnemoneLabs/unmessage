@@ -560,7 +560,12 @@ class Peer(object):
         ciphertext = conversation.axolotl.encrypt(plaintext)
         conversation.axolotl.save()
 
-        return packets.RegularPacket(
+        if handshake_key:
+            packet_type = packets.ReplyPacket
+        else:
+            packet_type = packets.RegularPacket
+
+        return packet_type(
             b2a(iv),
             b2a(pyaxo.hash_(iv + conversation.contact.key + keys.iv_hash_key)),
             b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
