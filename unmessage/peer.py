@@ -16,12 +16,13 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
 from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
+from twisted.python.failure import Failure
 from txtorcon import TorClientEndpoint
 
 from . import __version__
@@ -218,6 +219,19 @@ class Peer(object):
         self.log.info(status)
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
 
+    def _notify_error(self, conv, error):
+        failure = error if isinstance(error, Failure) else Failure(error)
+
+        if failure.check(errors.ConnectionLostError):
+            conv.ui.notify_disconnect(failure.value)
+        elif failure.check(errors.OfflinePeerError):
+            conv.ui.notify_offline(failure.value)
+        elif failure.check(errors.UnmessageError):
+            conv.ui.notify_error(failure.value)
+        else:
+            conv.ui.notify_error(
+                errors.UnmessageError(failure.getErrorMessage()))
+
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
             os.makedirs(self._path_peer_dir)
@@ -257,6 +271,7 @@ class Peer(object):
         return convs
 
     def _send_presence(self, offline=False):
+        # TODO use a DeferredList
         self._presence_convs = list()
         self._presence_event = Event()
 
@@ -264,11 +279,19 @@ class Peer(object):
             if c.contact.has_presence:
                 if offline and c.is_active:
                     self._presence_convs.append(c.contact.name)
-                    self._send_element(c, PresenceElement.type_,
-                                       content=PresenceElement.status_offline)
+                    d = self._send_element(
+                        c, PresenceElement.type_,
+                        content=PresenceElement.status_offline)
+                    d.addCallbacks(
+                        lambda args: self._element_parser.parse(*args),
+                        lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
-                    self._send_element(c, PresenceElement.type_,
-                                       content=PresenceElement.status_online)
+                    d = self._send_element(
+                        c, PresenceElement.type_,
+                        content=PresenceElement.status_online)
+                    d.addCallbacks(
+                        lambda args: self._element_parser.parse(*args),
+                        lambda failure: self._notify_error(c, failure))
 
         if self._presence_convs:
             # wait until all conversations are notified
@@ -280,7 +303,9 @@ class Peer(object):
         manager.start()
         return manager
 
-    def _connect(self, address, callback, errback):
+    def _connect(self, address):
+        d = Deferred()
+
         if self._local_mode:
             point = TCP4ClientEndpoint(self._twisted_reactor,
                                        host=HOST, port=address.port)
@@ -291,12 +316,13 @@ class Peer(object):
                                       socks_port=self._port_tor_socks)
 
         def connect_from_thread():
-            d = connectProtocol(point,
-                                _ConversationProtocol(self._twisted_factory,
-                                                      callback))
-            d.addErrback(errback)
+            d_conn_proto = connectProtocol(
+                point, _ConversationProtocol(self._twisted_factory))
+            d_conn_proto.addCallbacks(d.callback, d.errback)
 
         self._twisted_reactor.callFromThread(connect_from_thread)
+
+        return d
 
     def _create_request(self, contact):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
@@ -408,92 +434,105 @@ class Peer(object):
         del self._contacts[conversation.contact.name]
         del self._conversations[conversation.contact.name]
 
+    @inlineCallbacks
     def _send_element(self, conv, type_, content, handshake_key=None):
-        """Create an ``ElementPacket`` and add it to the outbout packets queue.
+        """Create an ``ElementPacket``, connect (if needed) and send it.
+
+        Return a ``Deferred`` that is fired after the the element is sent using
+        the appropriate manager.
 
         TODO
             - Size invariance should be handled here, before encryption by
               ``_send_packet``
             - Split the element into multiple packets if needed
+            - Maybe use a ``DeferredList``
         """
         packet = packets.ElementPacket(type_, payload=content)
-        conv.queue_out_packets.put([packet, conv, handshake_key])
 
-    def _send_packet(self, packet, conversation, handshake_key=None):
+        manager = yield self._get_active_manager(packet, conv)
+        result = yield self._send_packet(packet, manager, conv, handshake_key)
+
+        returnValue(result)
+
+    @inlineCallbacks
+    def _get_active_manager(self, packet, conversation):
+        """Get a manager with an active connection to send the element.
+
+        Return a ``Deferred`` that is fired with a conversation manager capable
+        of transmitting the element. In case the conversation does not have an
+        active connection or it is not a regular element, establish a new
+        connection. Otherwise, use the conversation's current active
+        connection.
+        """
+        # TODO handle an element instead of a packet
+        def connection_failed(failure):
+            if packet.type_ != PresenceElement.type_:
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    raise Failure(errors.OfflinePeerError(
+                        title=failure.getErrorMessage(),
+                        contact=conversation.contact.name))
+                else:
+                    raise Failure(errors.UnmessageError(
+                        title='Conversation connection failed',
+                        message=str(failure)))
+
+        manager = conversation
+
+        if not conversation.is_active:
+            try:
+                # the peer connects to the other one to resume a conversation
+                connection = yield self._connect(conversation.contact.address)
+            except Exception as e:
+                connection_failed(Failure(e))
+            else:
+                conversation.set_active(connection, Conversation.state_conv)
+        elif packet.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager = conversation._get_manager(packet.type_)
+
+            if not manager.connection:
+                try:
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
+                    connection = yield self._connect(
+                        conversation.contact.address)
+                except Exception as e:
+                    connection_failed(Failure(e))
+                else:
+                    manager = conversation.add_connection(connection,
+                                                          packet.type_)
+
+        returnValue(manager)
+
+    @inlineCallbacks
+    def _send_packet(self, packet, manager, conversation, handshake_key=None):
         """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
 
-        Before proceding, make sure the conversation has a connection. Wrap the
-        element packet with the regular encrypted packet and send it. After
-        successfully transmitting it, process it and parse the element.
+        Wrap the element packet with the regular encrypted packet and return a
+        ``Deferred`` after successfully transmitting it.
         """
-        def element_sent():
+        reg_packet = self._encrypt(packet, conversation, handshake_key)
+
+        try:
+            # pack the ``RegularPacket`` into a ``str`` and send it
+            yield manager.send_data(str(reg_packet))
+        except Exception as failure:
+            # TODO handle remaining packets and close the conversation
+            # somewhere else
+            conversation.close()
+
+            e = errors.ConnectionLostError()
+            e.title += ' - ' + failure.title
+            e.message += ' - ' + failure.message
+
+            raise Failure(e)
+        else:
             element = self._process_element_packet(
                 packet,
                 conversation,
                 sender=self.name,
                 receiver=conversation.contact.name)
-            self._element_parser.parse(element, conversation)
-
-        def element_not_sent(failure):
-            # TODO handle remaining packets
-            conversation.close()
-
-            # TODO handle expected errors and display better messages
-            conversation.ui.notify_disconnect(
-                notifications.UnmessageNotification(str(failure)))
-
-        def send_with_manager(manager):
-            # at this point there is already an existing conversation between
-            # the two parties in the database, so a ``RegularPacket`` can be
-            # created with ``_encrypt``
-            reg_packet = self._encrypt(packet, conversation, handshake_key)
-
-            # pack the ``RegularPacket`` into a ``str`` and send it
-            manager.send_data(str(reg_packet),
-                              callback=element_sent,
-                              errback=element_not_sent)
-
-        def connection_failed(failure):
-            if packet.type_ != PresenceElement.type_:
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    conversation.ui.notify_offline(
-                        errors.OfflinePeerError(
-                            title=failure.getErrorMessage(),
-                            contact=conversation.contact.name))
-                else:
-                    conversation.ui.notify_error(errors.UnmessageError(
-                        title='Conversation connection failed',
-                        message=str(failure)))
-
-        def connect(connection_made):
-            self._connect(conversation.contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
-
-        if conversation.is_active:
-            if packet.type_ in elements.REGULAR_ELEMENT_TYPES:
-                send_with_manager(conversation)
-            else:
-                manager = conversation._get_manager(packet.type_)
-                if not manager.connection:
-                    def connection_made(connection):
-                        manager = conversation.add_connection(connection,
-                                                              packet.type_)
-                        send_with_manager(manager)
-
-                    # the peer makes another connection to the other one to
-                    # send this "special" element
-                    connect(connection_made)
-                else:
-                    send_with_manager(manager)
-        else:
-            def connection_made(connection):
-                conversation.set_active(connection, Conversation.state_conv)
-                send_with_manager(conversation)
-
-            # the peer connects to the other one to resume a conversation
-            connect(connection_made)
+            returnValue((element, conversation))
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
@@ -557,8 +596,9 @@ class Peer(object):
             keys = conversation.keys
             handshake_key = ''
 
-        ciphertext = conversation.axolotl.encrypt(plaintext)
-        conversation.axolotl.save()
+        with conversation.axolotl_lock:
+            ciphertext = conversation.axolotl.encrypt(plaintext)
+            conversation.axolotl.save()
 
         if handshake_key:
             packet_type = packets.ReplyPacket
@@ -580,8 +620,9 @@ class Peer(object):
                                   a2b(packet.handshake_key) + ciphertext)
 
         if payload_hash == a2b(packet.payload_hash):
-            plaintext = conversation.axolotl.decrypt(ciphertext)
-            conversation.axolotl.save()
+            with conversation.axolotl_lock:
+                plaintext = conversation.axolotl.decrypt(ciphertext)
+                conversation.axolotl.save()
             return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
@@ -710,7 +751,7 @@ class Peer(object):
             req = self._create_request(contact)
 
             def connection_made(connection):
-                def request_sent():
+                def request_sent(result):
                     self._outbound_requests[contact.identity] = req
                     self._ui.notify_out_request(
                         notifications.ContactNotification(
@@ -731,9 +772,8 @@ class Peer(object):
 
                 # pack the ``RequestPacket`` into a ``str`` and send it to the
                 # other peer
-                conv.send_data(str(req.packet),
-                               callback=request_sent,
-                               errback=request_failed)
+                d_send_data = conv.send_data(str(req.packet))
+                d_send_data.addCallbacks(request_sent, request_failed)
 
             def connection_failed(failure):
                 if failure.check(txtorcon.socks.HostUnreachableError,
@@ -747,9 +787,8 @@ class Peer(object):
                         title='Request connection failed',
                         message=str(failure)))
 
-            self._connect(contact.address,
-                          callback=connection_made,
-                          errback=connection_failed)
+            d_connect = self._connect(contact.address)
+            d_connect.addCallbacks(connection_made, connection_failed)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
@@ -772,10 +811,12 @@ class Peer(object):
                 request.packet.handshake_packet.ratchet_key),
             mode=True)
 
-        self._send_element(conv,
-                           RequestElement.type_,
-                           content=RequestElement.request_accepted,
-                           handshake_key=handshake_keys.pub)
+        d = self._send_element(conv,
+                               RequestElement.type_,
+                               content=RequestElement.request_accepted,
+                               handshake_key=handshake_keys.pub)
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conv, failure))
 
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
@@ -791,10 +832,14 @@ class Peer(object):
                         conversation.remove_manager(untalk_session)
                         self._ui.notify_error(e)
                     else:
-                        self._send_element(
+                        d = self._send_element(
                             conversation,
                             UntalkElement.type_,
                             content=b2a(untalk_session.handshake_keys.pub))
+                        d.addCallbacks(
+                            lambda args: self._element_parser.parse(*args),
+                            lambda failure: self._notify_error(conversation,
+                                                               failure))
             else:
                 self._ui.notify_error(errors.UntalkError(
                     message='You can only make one voice conversation at a '
@@ -815,9 +860,12 @@ class Peer(object):
         return True
 
     def _send_message(self, conversation, plaintext):
-        self._send_element(conversation,
-                           MessageElement.type_,
-                           content=plaintext)
+        d = self._send_element(conversation,
+                               MessageElement.type_,
+                               content=plaintext)
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conversation,
+                                                          failure))
 
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
@@ -826,10 +874,13 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        self._send_element(conversation,
-                           AuthenticationElement.type_,
-                           content=auth_session.start(
-                               conversation.keys.auth_secret_key + secret))
+        d = self._send_element(conversation,
+                               AuthenticationElement.type_,
+                               content=auth_session.start(
+                                   conversation.keys.auth_secret_key + secret))
+        d.addCallbacks(lambda args: self._element_parser.parse(*args),
+                       lambda failure: self._notify_error(conversation,
+                                                          failure))
 
     def get_contact(self, name):
         return self.get_conversation(name).contact
@@ -1083,6 +1134,8 @@ class Conversation(object):
         default=None)
     connection = attr.ib(default=None)
 
+    axolotl_lock = attr.ib(init=False, default=attr.Factory(Lock))
+
     ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
 
     auth_session = attr.ib(init=False, default=None)
@@ -1092,7 +1145,6 @@ class Conversation(object):
     queue_in_data = attr.ib(init=False, default=attr.Factory(Queue))
     queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
     queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
-    queue_out_packets = attr.ib(init=False, default=attr.Factory(Queue))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
@@ -1102,7 +1154,6 @@ class Conversation(object):
     thread_in_data = attr.ib(init=False)
     thread_out_data = attr.ib(init=False)
     thread_in_packets = attr.ib(init=False)
-    thread_out_packets = attr.ib(init=False)
 
     def __attrs_post_init__(self):
         self.thread_in_data = Thread(target=self.check_in_data)
@@ -1111,14 +1162,11 @@ class Conversation(object):
         self.thread_out_data.daemon = True
         self.thread_in_packets = Thread(target=self.check_in_packets)
         self.thread_in_packets.daemon = True
-        self.thread_out_packets = Thread(target=self.check_out_packets)
-        self.thread_out_packets.daemon = True
 
     def start(self):
         self.thread_in_data.start()
         self.thread_out_data.start()
         self.thread_in_packets.start()
-        self.thread_out_packets.start()
 
     @property
     def is_authenticated(self):
@@ -1169,27 +1217,24 @@ class Conversation(object):
 
     def check_out_data(self):
         while True:
-            data, callback, errback = self.queue_out_data.get()
+            data, d = self.queue_out_data.get()
             try:
                 self.connection.send(data)
             except Exception as e:
-                errback(errors.UnmessageError(title=type(e),
-                                              message=e.message))
+                d.errback(errors.UnmessageError(title=type(e),
+                                                message=e.message))
             else:
-                callback()
+                d.callback(None)
 
     def check_in_packets(self):
         while True:
             args = self.queue_in_packets.get()
             self.peer._receive_packet(*args)
 
-    def check_out_packets(self):
-        while True:
-            args = self.queue_out_packets.get()
-            self.peer._send_packet(*args)
-
-    def send_data(self, data, callback, errback):
-        self.queue_out_data.put([data, callback, errback])
+    def send_data(self, data):
+        d = Deferred()
+        self.queue_out_data.put((data, d))
+        return d
 
     def handle_conv_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
@@ -1413,9 +1458,14 @@ class ElementParser(object):
                                     conversation.contact.name)))
             else:
                 if next_buffer:
-                    self.peer._send_element(conversation,
-                                            type_=AuthenticationElement.type_,
-                                            content=next_buffer)
+                    d = self.peer._send_element(
+                        conversation,
+                        type_=AuthenticationElement.type_,
+                        content=next_buffer)
+                    d.addCallbacks(
+                        lambda args: self.peer._element_parser.parse(*args),
+                        lambda failure: self.peer._notify_error(conversation,
+                                                                failure))
             if conversation.is_authenticated is None:
                 # the authentication is not complete as buffers are still being
                 # exchanged
@@ -1473,8 +1523,11 @@ class _ConversationProtocol(NetstringReceiver, object):
     manager = attr.ib(init=False, default=None)
     type_ = attr.ib(init=False, default=None)
 
+    _lock_send = attr.ib(init=False, default=attr.Factory(Lock))
+
     def connectionMade(self):
-        self.connection_made(self)
+        if self.connection_made:
+            self.connection_made(self)
 
     def add_manager(self, manager, type_=None):
         self.manager = manager
@@ -1508,7 +1561,8 @@ class _ConversationProtocol(NetstringReceiver, object):
                     message='Packet received without a manager'))
 
     def send(self, string):
-        self.sendString(string)
+        with self._lock_send:
+            self.sendString(string)
 
 
 @attr.s
