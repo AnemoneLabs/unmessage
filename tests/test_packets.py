@@ -42,11 +42,11 @@ def test_build_intro_packet(iv,
     if (len(iv) == packets.IV_LEN and
             len(iv_hash) == packets.HASH_LEN and
             len(data)):
-        assert isinstance(packets.build_intro_packet(data),
+        assert isinstance(packets.IntroductionPacket.build(data),
                           packets.IntroductionPacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
-            packets.build_intro_packet(data)
+            packets.IntroductionPacket.build(data)
 
 
 @given(
@@ -78,11 +78,11 @@ def test_build_regular_packet(iv,
             len(payload_hash) == packets.HASH_LEN and
             not len(handshake_key) and
             len(payload)):
-        assert isinstance(packets.build_regular_packet(data),
+        assert isinstance(packets.RegularPacket.build(data),
                           packets.RegularPacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
-            packets.build_regular_packet(data)
+            packets.RegularPacket.build(data)
 
 
 @given(
@@ -114,11 +114,11 @@ def test_build_reply_packet(iv,
             len(payload_hash) == packets.HASH_LEN and
             len(handshake_key) == packets.ENC_KEY_LEN and
             len(payload)):
-        assert isinstance(packets.build_reply_packet(data),
-                          packets.RegularPacket)
+        assert isinstance(packets.ReplyPacket.build(data),
+                          packets.ReplyPacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
-            packets.build_reply_packet(data)
+            packets.ReplyPacket.build(data)
 
 
 @given(
@@ -150,11 +150,11 @@ def test_build_request_packet(iv,
             len(handshake_packet_hash) == packets.HASH_LEN and
             len(request_key) == packets.KEY_LEN and
             len(handshake_packet)):
-        assert isinstance(packets.build_request_packet(data),
+        assert isinstance(packets.RequestPacket.build(data),
                           packets.RequestPacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
-            packets.build_request_packet(data)
+            packets.RequestPacket.build(data)
 
 
 @given(
@@ -181,8 +181,8 @@ def test_build_handshake_packet(identity,
             len(identity_key) == packets.KEY_LEN and
             len(handshake_key) == packets.KEY_LEN and
             len(ratchet_key) == packets.KEY_LEN):
-        assert isinstance(packets.build_handshake_packet(data),
+        assert isinstance(packets.HandshakePacket.build(data),
                           packets.HandshakePacket)
     else:
         with pytest.raises(errors.MalformedPacketError):
-            packets.build_handshake_packet(data)
+            packets.HandshakePacket.build(data)

@@ -101,6 +101,8 @@ class Peer(object):
 
     _state = attr.ib(init=False)
 
+    log = attr.ib(init=False)
+
     def __attrs_post_init__(self):
         self.log = Logger()
         self.log.info('{} {}'.format(APP_NAME, __version__))
@@ -330,7 +332,7 @@ class Peer(object):
 
     def _process_request(self, data):
         """Create a ``RequestPacket`` from the data received."""
-        req_packet = packets.build_request_packet(data)
+        req_packet = packets.RequestPacket.build(data)
         hs_packet = a2b(req_packet.handshake_packet)
 
         shared_request_key = pyaxo.generate_dh(self.identity_keys.priv,
@@ -348,7 +350,7 @@ class Peer(object):
                 e.message += ' - decryption failed'
                 raise e
 
-            req_packet.handshake_packet = packets.build_handshake_packet(
+            req_packet.handshake_packet = packets.HandshakePacket.build(
                 dec_hs_packet)
 
             contact = Contact(req_packet.handshake_packet.identity,
@@ -558,7 +560,12 @@ class Peer(object):
         ciphertext = conversation.axolotl.encrypt(plaintext)
         conversation.axolotl.save()
 
-        return packets.RegularPacket(
+        if handshake_key:
+            packet_type = packets.ReplyPacket
+        else:
+            packet_type = packets.RegularPacket
+
+        return packet_type(
             b2a(iv),
             b2a(pyaxo.hash_(iv + conversation.contact.key + keys.iv_hash_key)),
             b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
@@ -575,7 +582,7 @@ class Peer(object):
         if payload_hash == a2b(packet.payload_hash):
             plaintext = conversation.axolotl.decrypt(ciphertext)
             conversation.axolotl.save()
-            return packets.build_element_packet(plaintext)
+            return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
 
@@ -1018,7 +1025,7 @@ class Introduction(Thread):
             self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
-        packet = packets.build_intro_packet(data)
+        packet = packets.IntroductionPacket.build(data)
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
@@ -1185,11 +1192,11 @@ class Conversation(object):
         self.queue_out_data.put([data, callback, errback])
 
     def handle_conv_data(self, data, connection):
-        packet = packets.build_regular_packet(data)
+        packet = packets.RegularPacket.build(data)
         self.queue_in_packets.put([packet, connection, self])
 
     def handle_out_req_data(self, data, connection):
-        packet = packets.build_reply_packet(data)
+        packet = packets.ReplyPacket.build(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
 
@@ -1336,7 +1343,7 @@ class AuthSession(object):
 
 @attr.s
 class ElementParser(object):
-    peer = attr.ib(validator=attr.validators.instance_of(Peer))
+    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
@@ -1445,8 +1452,8 @@ class ElementParser(object):
 
 @attr.s
 class _ConversationFactory(Factory, object):
-    peer = attr.ib(validator=attr.validators.instance_of(Peer))
-    connection_made = attr.ib()
+    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
+    connection_made = attr.ib(repr=False)
 
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
