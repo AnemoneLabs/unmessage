@@ -332,7 +332,7 @@ class Peer(object):
 
     def _process_request(self, data):
         """Create a ``RequestPacket`` from the data received."""
-        req_packet = packets.build_request_packet(data)
+        req_packet = packets.RequestPacket.build(data)
         hs_packet = a2b(req_packet.handshake_packet)
 
         shared_request_key = pyaxo.generate_dh(self.identity_keys.priv,
@@ -350,7 +350,7 @@ class Peer(object):
                 e.message += ' - decryption failed'
                 raise e
 
-            req_packet.handshake_packet = packets.build_handshake_packet(
+            req_packet.handshake_packet = packets.HandshakePacket.build(
                 dec_hs_packet)
 
             contact = Contact(req_packet.handshake_packet.identity,
@@ -577,7 +577,7 @@ class Peer(object):
         if payload_hash == a2b(packet.payload_hash):
             plaintext = conversation.axolotl.decrypt(ciphertext)
             conversation.axolotl.save()
-            return packets.build_element_packet(plaintext)
+            return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
 
@@ -1020,7 +1020,7 @@ class Introduction(Thread):
             self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
-        packet = packets.build_intro_packet(data)
+        packet = packets.IntroductionPacket.build(data)
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
@@ -1187,11 +1187,11 @@ class Conversation(object):
         self.queue_out_data.put([data, callback, errback])
 
     def handle_conv_data(self, data, connection):
-        packet = packets.build_regular_packet(data)
+        packet = packets.RegularPacket.build(data)
         self.queue_in_packets.put([packet, connection, self])
 
     def handle_out_req_data(self, data, connection):
-        packet = packets.build_reply_packet(data)
+        packet = packets.ReplyPacket.build(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
 

@@ -18,12 +18,11 @@ LINESEP = '\n'
 
 def raise_malformed(f):
     @wraps(f)
-    def try_building(data):
+    def try_building(cls, data):
         try:
-            return f(data)
+            return f(cls, data)
         except (AssertionError, IndexError, TypeError, ValueError):
-            packet_type = f.func_name.split('_')[1]
-            e = errors.MalformedPacketError(packet_type)
+            e = errors.MalformedPacketError(cls.__name__)
             indexed_lines = ['[{}]: {}'.format(index, line)
                              for index, line in enumerate(data.splitlines())]
             e.message = LINESEP.join([e.message] + indexed_lines)
@@ -65,58 +64,28 @@ def is_valid_empty(value):
     return is_valid_length(value, 0)
 
 
-@raise_malformed
-def build_intro_packet(data):
-    lines = data.splitlines()
-    packet = IntroductionPacket(iv=lines[0],
-                                iv_hash=lines[1],
-                                data=data)
-    return packet
-
-
-@raise_malformed
-def build_regular_packet(data):
-    packet = RegularPacket(*data.splitlines())
-    return packet
-
-
-@raise_malformed
-def build_reply_packet(data):
-    packet = ReplyPacket(*data.splitlines())
-    return packet
-
-
-@raise_malformed
-def build_request_packet(data):
-    packet = RequestPacket(*data.splitlines())
-    return packet
-
-
-@raise_malformed
-def build_handshake_packet(data):
-    packet = HandshakePacket(*data.splitlines())
-    return packet
-
-
-@raise_malformed
-def build_element_packet(data):
-    lines = data.splitlines()
-    return ElementPacket(type_=lines[0],
-                         id_=lines[1],
-                         part_num=lines[2],
-                         part_len=lines[3],
-                         payload=LINESEP.join(lines[4:]))
-
-
 @attr.s
 class Packet(object):
     iv = attr.ib(validator=raise_if_not(is_valid_iv))
     iv_hash = attr.ib(validator=raise_if_not(is_valid_hash))
 
+    @classmethod
+    @raise_malformed
+    def build(cls, data):
+        return cls(*data.splitlines())
+
 
 @attr.s
 class IntroductionPacket(Packet):
     data = attr.ib(validator=raise_if_not(is_valid_non_empty))
+
+    @classmethod
+    @raise_malformed
+    def build(cls, data):
+        lines = data.splitlines()
+        return cls(iv=lines[0],
+                   iv_hash=lines[1],
+                   data=data)
 
     def __str__(self):
         return self.data
@@ -171,6 +140,11 @@ class HandshakePacket(object):
     handshake_key = attr.ib(validator=raise_if_not(is_valid_key))
     ratchet_key = attr.ib(validator=raise_if_not(is_valid_key))
 
+    @classmethod
+    @raise_malformed
+    def build(cls, data):
+        return cls(*data.splitlines())
+
     def __str__(self):
         return LINESEP.join([self.identity,
                              self.identity_key,
@@ -187,6 +161,16 @@ class ElementPacket(object):
         default=attr.Factory(elements.get_random_id))
     part_num = attr.ib(default=1, convert=int)
     part_len = attr.ib(default=1, convert=int)
+
+    @classmethod
+    @raise_malformed
+    def build(cls, data):
+        lines = data.splitlines()
+        return cls(type_=lines[0],
+                   id_=lines[1],
+                   part_num=lines[2],
+                   part_len=lines[3],
+                   payload=LINESEP.join(lines[4:]))
 
     def __str__(self):
         return LINESEP.join([self.type_,
