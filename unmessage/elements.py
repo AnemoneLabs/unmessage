@@ -42,26 +42,31 @@ class ElementPayload(object):
         return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
 
-class RequestElement:
+@attr.s
+class RequestElement(ElementPayload):
     type_ = 'req'
     request_accepted = 'accepted'
 
 
-class UntalkElement:
+@attr.s
+class UntalkElement(ElementPayload):
     type_ = 'untalk'
 
 
-class PresenceElement:
+@attr.s
+class PresenceElement(ElementPayload):
     type_ = 'pres'
     status_online = 'online'
     status_offline = 'offline'
 
 
-class MessageElement:
+@attr.s
+class MessageElement(ElementPayload):
     type_ = 'msg'
 
 
-class AuthenticationElement:
+@attr.s
+class AuthenticationElement(ElementPayload):
     type_ = 'auth'
 
 
