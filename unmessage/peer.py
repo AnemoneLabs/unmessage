@@ -1519,7 +1519,7 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     factory = attr.ib(
         validator=attr.validators.instance_of(_ConversationFactory))
-    connection_made = attr.ib()
+    connection_made = attr.ib(default=None)
     manager = attr.ib(init=False, default=None)
     type_ = attr.ib(init=False, default=None)
 
