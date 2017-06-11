@@ -556,31 +556,32 @@ class Peer(object):
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
             try:
-                # get the ``Element`` that corresponds to the
+                # get the ``PartialElement`` that corresponds to the
                 # ``ElementPacket.id_`` in case it is one of the parts of an
                 # incomplete element
                 element = conversation.elements.pop(packet.id_)
             except KeyError:
-                # create an ``Element`` as there are no incomplete elements
-                # with the respective ``ElementPacket.id_``
-                element = elements.Element(sender,
-                                           receiver,
-                                           type_=packet.type_,
-                                           id_=packet.id_,
-                                           part_len=packet.part_len)
+                # create an ``PartialElement`` as there are no incomplete
+                # elements with the respective ``ElementPacket.id_``
+                element = elements.PartialElement(sender,
+                                                  receiver,
+                                                  type_=packet.type_,
+                                                  id_=packet.id_,
+                                                  part_len=packet.part_len)
 
             # add the part from the packet
             element[packet.part_num] = packet.payload
 
             if element.is_complete:
-                # the ``Element`` does not have to be stored as either it
-                # fitted in a single packet or all of its parts have been
+                # the ``PartialElement`` does not have to be stored as either
+                # it fitted in a single packet or all of its parts have been
                 # transmitted (the ``packet`` contained the last remaining
                 # part)
                 pass
             else:
-                # store the ``Element`` in the incomplete elements ``dict`` as
-                # it has been split in multiple parts, yet to be transmitted
+                # store the ``PartialElement`` in the incomplete elements
+                # ``dict`` as it has been split in multiple parts, yet to be
+                # transmitted
                 conversation.elements[element.id_] = element
             return element
 
@@ -1485,8 +1486,8 @@ class ElementParser(object):
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
-            # it can be parsed as all parts have been added to the ``Element``
-            # or it is composed of a single part
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
             try:
                 method = getattr(self,
                                  '_parse_{}_element'.format(element.type_))
@@ -1496,7 +1497,8 @@ class ElementParser(object):
             else:
                 method(element, conversation, connection)
         else:
-            # the ``Element`` has parts yet to be transmitted (sent/received)
+            # the ``PartialElement`` has parts yet to be
+            # transmitted (sent/received)
             pass
 
 

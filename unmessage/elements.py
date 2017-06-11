@@ -5,7 +5,7 @@ from nacl.utils import random
 from pyaxo import b2a
 
 
-class Element(dict):
+class PartialElement(dict):
     def __init__(self, sender, receiver, type_, id_, part_len):
         self.sender = sender
         self.receiver = receiver
