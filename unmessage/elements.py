@@ -22,7 +22,7 @@ class PartialElement(dict):
 
 
 @attr.s
-class ElementPayload(object):
+class Element(object):
     filtered_attr_names = None
 
     content = attr.ib(default=None)
@@ -43,35 +43,35 @@ class ElementPayload(object):
 
 
 @attr.s
-class RequestElement(ElementPayload):
+class RequestElement(Element):
     type_ = 'req'
     request_accepted = 'accepted'
 
 
 @attr.s
-class UntalkElement(ElementPayload):
+class UntalkElement(Element):
     type_ = 'untalk'
 
 
 @attr.s
-class PresenceElement(ElementPayload):
+class PresenceElement(Element):
     type_ = 'pres'
     status_online = 'online'
     status_offline = 'offline'
 
 
 @attr.s
-class MessageElement(ElementPayload):
+class MessageElement(Element):
     type_ = 'msg'
 
 
 @attr.s
-class AuthenticationElement(ElementPayload):
+class AuthenticationElement(Element):
     type_ = 'auth'
 
 
 @attr.s
-class FileRequestElement(ElementPayload):
+class FileRequestElement(Element):
     type_ = 'filereq'
     request_accepted = 'accepted'
 
@@ -80,7 +80,7 @@ class FileRequestElement(ElementPayload):
 
 
 @attr.s
-class FileElement(ElementPayload):
+class FileElement(Element):
     type_ = 'file'
 
 
