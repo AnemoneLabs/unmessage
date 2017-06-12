@@ -280,15 +280,13 @@ class Peer(object):
                 if offline and c.is_active:
                     self._presence_convs.append(c.contact.name)
                     d = self._send_element(
-                        c, PresenceElement.type_,
-                        content=PresenceElement.status_offline)
+                        c, PresenceElement(PresenceElement.status_offline))
                     d.addCallbacks(
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
                     d = self._send_element(
-                        c, PresenceElement.type_,
-                        content=PresenceElement.status_online)
+                        c, PresenceElement(PresenceElement.status_online))
                     d.addCallbacks(
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
@@ -435,7 +433,7 @@ class Peer(object):
         del self._conversations[conversation.contact.name]
 
     @inlineCallbacks
-    def _send_element(self, conv, type_, content, handshake_key=None):
+    def _send_element(self, conv, element, handshake_key=None):
         """Create an ``ElementPacket``, connect (if needed) and send it.
 
         Return a ``Deferred`` that is fired after the the element is sent using
@@ -447,7 +445,7 @@ class Peer(object):
             - Split the element into multiple packets if needed
             - Maybe use a ``DeferredList``
         """
-        packet = packets.ElementPacket(type_, payload=content)
+        packet = packets.ElementPacket(element.type_, payload=element.content)
 
         manager = yield self._get_active_manager(packet, conv)
         result = yield self._send_packet(packet, manager, conv, handshake_key)
@@ -813,8 +811,7 @@ class Peer(object):
             mode=True)
 
         d = self._send_element(conv,
-                               RequestElement.type_,
-                               content=RequestElement.request_accepted,
+                               RequestElement(RequestElement.request_accepted),
                                handshake_key=handshake_keys.pub)
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conv, failure))
@@ -835,8 +832,8 @@ class Peer(object):
                     else:
                         d = self._send_element(
                             conversation,
-                            UntalkElement.type_,
-                            content=b2a(untalk_session.handshake_keys.pub))
+                            UntalkElement(
+                                b2a(untalk_session.handshake_keys.pub)))
                         d.addCallbacks(
                             lambda args: self._element_parser.parse(*args),
                             lambda failure: self._notify_error(conversation,
@@ -861,9 +858,7 @@ class Peer(object):
         return True
 
     def _send_message(self, conversation, plaintext):
-        d = self._send_element(conversation,
-                               MessageElement.type_,
-                               content=plaintext)
+        d = self._send_element(conversation, MessageElement(plaintext))
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conversation,
                                                           failure))
@@ -875,10 +870,10 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        d = self._send_element(conversation,
-                               AuthenticationElement.type_,
-                               content=auth_session.start(
-                                   conversation.keys.auth_secret_key + secret))
+        d = self._send_element(
+            conversation,
+            AuthenticationElement(auth_session.start(
+                conversation.keys.auth_secret_key + secret)))
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conversation,
                                                           failure))
@@ -1461,8 +1456,7 @@ class ElementParser(object):
                 if next_buffer:
                     d = self.peer._send_element(
                         conversation,
-                        type_=AuthenticationElement.type_,
-                        content=next_buffer)
+                        AuthenticationElement(next_buffer))
                     d.addCallbacks(
                         lambda args: self.peer._element_parser.parse(*args),
                         lambda failure: self.peer._notify_error(conversation,
