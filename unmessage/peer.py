@@ -447,13 +447,13 @@ class Peer(object):
         """
         packet = packets.ElementPacket(element.type_, payload=element.content)
 
-        manager = yield self._get_active_manager(packet, conv)
+        manager = yield self._get_active_manager(element, conv)
         result = yield self._send_packet(packet, manager, conv, handshake_key)
 
         returnValue(result)
 
     @inlineCallbacks
-    def _get_active_manager(self, packet, conversation):
+    def _get_active_manager(self, element, conversation):
         """Get a manager with an active connection to send the element.
 
         Return a ``Deferred`` that is fired with a conversation manager capable
@@ -462,9 +462,8 @@ class Peer(object):
         connection. Otherwise, use the conversation's current active
         connection.
         """
-        # TODO handle an element instead of a packet
         def connection_failed(failure):
-            if packet.type_ != PresenceElement.type_:
+            if element.type_ != PresenceElement.type_:
                 if failure.check(txtorcon.socks.HostUnreachableError,
                                  txtorcon.socks.TtlExpiredError):
                     raise Failure(errors.OfflinePeerError(
@@ -485,8 +484,8 @@ class Peer(object):
                 connection_failed(Failure(e))
             else:
                 conversation.set_active(connection, Conversation.state_conv)
-        elif packet.type_ not in elements.REGULAR_ELEMENT_TYPES:
-            manager = conversation._get_manager(packet.type_)
+        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager = conversation._get_manager(element.type_)
 
             if not manager.connection:
                 try:
@@ -498,7 +497,7 @@ class Peer(object):
                     connection_failed(Failure(e))
                 else:
                     manager = conversation.add_connection(connection,
-                                                          packet.type_)
+                                                          element.type_)
 
         returnValue(manager)
 
