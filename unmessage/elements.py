@@ -38,6 +38,9 @@ class Element(object):
     def deserialize(cls, data):
         return cls(**json.loads(data))
 
+    def __str__(self):
+        return self.content
+
     def serialize(self):
         return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
