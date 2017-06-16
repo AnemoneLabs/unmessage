@@ -6,6 +6,13 @@ from pyaxo import b2a
 
 
 class PartialElement(dict):
+    @classmethod
+    def from_packet(cls, packet, sender, receiver):
+        partial = cls(sender, receiver,
+                      packet.type_, packet.id_, packet.part_len)
+        partial[packet.part_num] = packet.payload
+        return partial
+
     def __init__(self, sender, receiver, type_, id_, part_len):
         self.sender = sender
         self.receiver = receiver
