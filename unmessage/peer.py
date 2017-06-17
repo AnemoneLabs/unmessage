@@ -560,14 +560,12 @@ class Peer(object):
             except KeyError:
                 # create an ``PartialElement`` as there are no incomplete
                 # elements with the respective ``ElementPacket.id_``
-                element = elements.PartialElement(sender,
-                                                  receiver,
-                                                  type_=packet.type_,
-                                                  id_=packet.id_,
-                                                  part_len=packet.part_len)
-
-            # add the part from the packet
-            element[packet.part_num] = packet.payload
+                element = elements.PartialElement.from_packet(packet,
+                                                              sender,
+                                                              receiver)
+            else:
+                # add the part from the packet
+                element[packet.part_num] = packet.payload
 
             if element.is_complete:
                 # the ``PartialElement`` does not have to be stored as either
