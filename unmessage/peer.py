@@ -445,7 +445,8 @@ class Peer(object):
             - Split the element into multiple packets if needed
             - Maybe use a ``DeferredList``
         """
-        packet = packets.ElementPacket(element.type_, payload=element.content)
+        packet = packets.ElementPacket(element.type_,
+                                       payload=element.serialize())
 
         manager = yield self._get_active_manager(element, conv)
         result = yield self._send_packet(packet, manager, conv, handshake_key)
@@ -1486,7 +1487,7 @@ class ElementParser(object):
                 # TODO handle elements with unknown types
                 pass
             else:
-                method(element, conversation, connection)
+                method(element.to_element(), conversation, connection)
         else:
             # the ``PartialElement`` has parts yet to be
             # transmitted (sent/received)
