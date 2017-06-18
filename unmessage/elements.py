@@ -27,14 +27,34 @@ class PartialElement(dict):
     def is_complete(self):
         return len(self) == self.part_len
 
+    def to_element(self):
+        element = Element.build(self.type_, str(self))
+        element.sender = self.sender
+        element.receiver = self.receiver
+        return element
+
 
 @attr.s
 class Element(object):
+    element_classes = None
     filtered_attr_names = ['content']
 
     content = attr.ib(default=None)
     sender = attr.ib(default=None)
     receiver = attr.ib(default=None)
+
+    @classmethod
+    def build(cls, type_, data):
+        try:
+            return cls.get_element_classes()[type_].deserialize(data)
+        except KeyError:
+            return Exception('Unknown element type: {}'.format(type_))
+
+    @classmethod
+    def get_element_classes(cls):
+        if not cls.element_classes:
+            cls.element_classes = {c.type_: c for c in cls.__subclasses__()}
+        return cls.element_classes
 
     @classmethod
     def filter_attrs(cls, attribute, value):
