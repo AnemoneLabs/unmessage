@@ -30,7 +30,7 @@ class PartialElement(dict):
 
 @attr.s
 class Element(object):
-    filtered_attr_names = None
+    filtered_attr_names = ['content']
 
     content = attr.ib(default=None)
 
@@ -82,6 +82,8 @@ class AuthenticationElement(Element):
 
 @attr.s
 class FileRequestElement(Element):
+    filtered_attr_names = 'content size checksum'.split()
+
     type_ = 'filereq'
     request_accepted = 'accepted'
 
