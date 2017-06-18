@@ -33,6 +33,8 @@ class Element(object):
     filtered_attr_names = ['content']
 
     content = attr.ib(default=None)
+    sender = attr.ib(default=None)
+    receiver = attr.ib(default=None)
 
     @classmethod
     def filter_attrs(cls, attribute, value):
