@@ -1,3 +1,4 @@
+import os
 import re
 from functools import wraps
 
@@ -85,3 +86,18 @@ def is_valid_shared_key(value):
 
 raise_invalid_shared_key = raise_if_not(is_valid_shared_key,
                                         errors.InvalidSharedKeyError)
+
+
+def is_valid_file_name(value):
+    # TODO make a real file name validator
+    try:
+        expath = os.path.expanduser(value)
+        assert expath == value
+        abspath = os.path.abspath(value)
+        assert abspath == os.path.join(os.getcwd(), value)
+        head, tail = os.path.split(value)
+        assert not len(head) and tail == value
+    except:
+        return False
+    else:
+        return True
