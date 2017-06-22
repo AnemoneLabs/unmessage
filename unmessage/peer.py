@@ -1298,7 +1298,7 @@ class Conversation(object):
     def init_untalk(self, connection=None, other_handshake_key=None):
         self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
         if connection:
-            self.add_connection(connection, elements.UntalkElement.type_)
+            self.add_connection(connection, untalk.UntalkSession.type_)
         return self.untalk_session
 
     def start_untalk(self, other_handshake_key=None):
@@ -1510,7 +1510,7 @@ class _ConversationFactory(Factory, object):
 @attr.s
 class _ConversationProtocol(NetstringReceiver, object):
     type_regular = 'reg'
-    type_untalk = elements.UntalkElement.type_
+    type_untalk = untalk.UntalkSession.type_
 
     factory = attr.ib(
         validator=attr.validators.instance_of(_ConversationFactory))
