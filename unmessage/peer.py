@@ -486,7 +486,8 @@ class Peer(object):
             else:
                 conversation.set_active(connection, Conversation.state_conv)
         elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
-            manager = conversation._get_manager(element.type_)
+            manager_class = get_manager_class(element)
+            manager = conversation._get_manager(manager_class.type_)
 
             if not manager.connection:
                 try:
@@ -498,7 +499,7 @@ class Peer(object):
                     connection_failed(Failure(e))
                 else:
                     manager = conversation.add_connection(connection,
-                                                          element.type_)
+                                                          manager_class.type_)
 
         returnValue(manager)
 
@@ -1557,6 +1558,18 @@ class _ConversationProtocol(NetstringReceiver, object):
     def send(self, string):
         with self._lock_send:
             self.sendString(string)
+
+
+MANAGER_CLASSES = [untalk.UntalkSession]
+
+
+def get_manager_class(element):
+    try:
+        return [manager_class
+                for manager_class in MANAGER_CLASSES
+                if type(element) in manager_class.element_classes][0]
+    except IndexError:
+        return errors.ManagerNotFoundError(type(element))
 
 
 @attr.s

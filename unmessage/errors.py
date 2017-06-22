@@ -87,6 +87,13 @@ class MalformedPacketError(UnmessageError):
                     '{} packet'.format(packet_type))
 
 
+class ManagerNotFoundError(UnmessageError):
+    def __init__(self, type_):
+        super(ManagerNotFoundError, self).__init__(
+            title='Manager not found error',
+            message='A manager for {} could not be found'.format(type_))
+
+
 class TransportError(UnmessageError):
     def __init__(self, message):
         super(TransportError, self).__init__(
