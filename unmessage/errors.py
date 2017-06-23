@@ -44,6 +44,13 @@ class OfflinePeerError(UnmessageError):
             message=message)
 
 
+class InvalidElementError(UnmessageError):
+    def __init__(self):
+        super(InvalidElementError, self).__init__(
+            title='Invalid element error',
+            message='The element provided is not valid')
+
+
 class InvalidIdentityError(UnmessageError):
     def __init__(self):
         super(InvalidIdentityError, self).__init__(
