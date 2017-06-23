@@ -1488,7 +1488,18 @@ class ElementParser(object):
                 # TODO handle elements with unknown types
                 pass
             else:
-                method(element.to_element(), conversation, connection)
+                try:
+                    method(element.to_element(), conversation, connection)
+                except Exception as e:
+                    message = ('Error while parsing element from {} in '
+                               '"{}"'.format(conversation.contact.name,
+                                             method))
+                    if e.message:
+                        message += ' - ' + e.message
+                    self.peer._notify_error(
+                        conversation,
+                        errors.UnmessageError(title=str(type(e)),
+                                              message=message))
         else:
             # the ``PartialElement`` has parts yet to be
             # transmitted (sent/received)
