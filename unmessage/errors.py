@@ -51,6 +51,13 @@ class InvalidElementError(UnmessageError):
             message='The element provided is not valid')
 
 
+class InvalidFileNameError(UnmessageError):
+    def __init__(self):
+        super(InvalidFileNameError, self).__init__(
+            title='Invalid file name error',
+            message='The file name provided is not valid')
+
+
 class InvalidIdentityError(UnmessageError):
     def __init__(self):
         super(InvalidIdentityError, self).__init__(
