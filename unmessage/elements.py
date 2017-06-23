@@ -112,10 +112,34 @@ class FileRequestElement(Element):
     size = attr.ib(default=None)
     checksum = attr.ib(default=None)
 
+    @classmethod
+    def is_valid_request(cls, element):
+        # TODO improve this validator
+        return (
+            isinstance(element, cls) and
+            isinstance(element.content, unicode) and len(element.content) and
+            isinstance(element.size, int) and element.size > 0 and
+            isinstance(element.checksum, unicode) and len(element.checksum))
+
+    @classmethod
+    def is_valid_accept(cls, element):
+        # TODO improve this validator
+        return (
+            isinstance(element, cls) and
+            isinstance(element.content, unicode) and len(element.content) and
+            element.size is None and
+            isinstance(element.checksum, unicode) and len(element.checksum))
+
 
 @attr.s
 class FileElement(Element):
     type_ = 'file'
+
+    @classmethod
+    def is_valid_file(cls, element):
+        # TODO improve this validator
+        return (isinstance(element, cls) and
+                isinstance(element.content, unicode) and len(element.content))
 
 
 REGULAR_ELEMENT_TYPES = [RequestElement.type_,
