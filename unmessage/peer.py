@@ -1177,6 +1177,14 @@ class Conversation(object):
         return os.path.join(self.peer._path_peer_dir, self.contact.name)
 
     @property
+    def file_session(self):
+        return self._get_manager(FileSession.type_)
+
+    @file_session.setter
+    def _file_session(self, manager):
+        self._set_manager(manager, FileSession.type_)
+
+    @property
     def untalk_session(self):
         return self._get_manager(elements.UntalkElement.type_)
 
@@ -1303,6 +1311,15 @@ class Conversation(object):
                     '{} has disconnected'.format(self.contact.name)))
         self.connection = None
         self.close()
+
+    def init_file(self, connection=None):
+        self._file_session = FileSession(self)
+        if connection:
+            self.add_connection(connection, FileSession.type_)
+        return self.file_session
+
+    def stop_file(self):
+        self.remove_manager(self.file_session)
 
     def init_untalk(self, connection=None, other_handshake_key=None):
         self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
