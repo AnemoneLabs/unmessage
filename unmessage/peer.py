@@ -1196,6 +1196,10 @@ class Conversation(object):
         manager.stop()
         del self._managers[manager.type_]
 
+    def create_dir(self):
+        if not os.path.exists(self.path_dir):
+            os.makedirs(self.path_dir)
+
     def check_in_data(self):
         while True:
             data, connection = self.queue_in_data.get()
