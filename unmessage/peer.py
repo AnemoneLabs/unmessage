@@ -1610,6 +1610,14 @@ class FileTransfer(object):
 class ElementParser(object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
+    def _parse_filereq_element(self, element, conversation, connection=None):
+        join(FileSession.parse_request_element(element,
+                                               conversation,
+                                               connection))
+
+    def _parse_file_element(self, element, conversation, connection=None):
+        FileSession.parse_file_element(element, conversation)
+
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
         if conversation.untalk_session:
