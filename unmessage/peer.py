@@ -144,6 +144,10 @@ class Peer(object):
         return os.path.join(self._path_peer_dir, 'peer.log')
 
     @property
+    def path_conversations_dir(self):
+        return os.path.join(self._path_peer_dir, 'conversations')
+
+    @property
     def _contacts(self):
         return self._info.contacts
 
@@ -236,6 +240,8 @@ class Peer(object):
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
             os.makedirs(self._path_peer_dir)
+        if not os.path.exists(self.path_conversations_dir):
+            os.makedirs(self.path_conversations_dir)
         if not os.path.exists(self._path_tor_dir):
             os.makedirs(self._path_tor_dir)
 
@@ -1174,7 +1180,8 @@ class Conversation(object):
 
     @property
     def path_dir(self):
-        return os.path.join(self.peer._path_peer_dir, self.contact.name)
+        return os.path.join(self.peer.path_conversations_dir,
+                            self.contact.name)
 
     @property
     def file_session(self):
