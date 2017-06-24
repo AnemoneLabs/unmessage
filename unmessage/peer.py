@@ -35,10 +35,11 @@ from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
+from .elements import FileRequestElement, FileElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address
-from .utils import is_valid_identity
-from .utils import raise_invalid_name, raise_invalid_shared_key
+from .utils import fork, join, Address
+from .utils import is_valid_identity, is_valid_file_name
+from .utils import raise_if_not, raise_invalid_name, raise_invalid_shared_key
 from .smp import SMP
 
 
@@ -1387,6 +1388,205 @@ class AuthSession(object):
             return b2a(next_buffer) + '\n'
         except TypeError:
             return None
+
+
+@attr.s
+class FileSession(object):
+    type_ = 'file'
+    element_classes = [FileRequestElement,
+                       FileElement]
+
+    conversation = attr.ib(validator=attr.validators.instance_of(Conversation),
+                           repr=False)
+    connection = attr.ib(init=False, default=None, repr=False)
+
+    in_requests = attr.ib(init=False, default=attr.Factory(dict))
+    in_files = attr.ib(init=False, default=attr.Factory(dict))
+
+    out_requests = attr.ib(init=False, default=attr.Factory(dict))
+    out_files = attr.ib(init=False, default=attr.Factory(dict))
+
+    @classmethod
+    @inlineCallbacks
+    def parse_request_element(cls, element, conversation, connection=None):
+        if FileRequestElement.is_valid_request(element):
+            manager = (conversation.file_session or
+                       conversation.init_file(connection))
+
+            transfer = manager.receive_request(element)
+            conversation.ui.notify_in_file_request(
+                notifications.FileNotification(
+                    '{} wishes to send the file "{}" ({} bytes)'.format(
+                        conversation.contact.name,
+                        element.content,
+                        element.size),
+                    transfer))
+            returnValue(transfer)
+        elif FileRequestElement.is_valid_accept(element):
+            manager = conversation.file_session
+            if manager:
+                transfer = yield manager.send_file(element)
+                conversation.ui.notify(
+                    notifications.FileNotification(
+                        'Finished sending "{}" to {}'.format(
+                            transfer.element.content,
+                            conversation.contact.name),
+                        transfer))
+                returnValue(transfer)
+            else:
+                raise errors.UnmessageError(
+                    'Unexpected FileRequestElement received, accepting a file '
+                    'without an active manager')
+        else:
+            raise errors.InvalidElementError()
+
+    @classmethod
+    def parse_file_element(cls, element, conversation):
+        raise_if_not(FileElement.is_valid_file,
+                     errors.InvalidElementError)(value=element)
+
+        manager = conversation.file_session
+        if manager:
+            transfer = manager.receive_file(element)
+            manager.save_received_file(transfer.element.checksum)
+            conversation.ui.notify(
+                notifications.FileNotification(
+                    'Finished receiving "{}" from {}, saved at {}'.format(
+                        transfer.element.content,
+                        conversation.contact.name,
+                        transfer.file_path),
+                    transfer))
+        else:
+            raise errors.UnmessageError(
+                'Unexpected FileElement received without an active manager')
+
+    @property
+    def queue_in_data(self):
+        return self.conversation.queue_in_data
+
+    @property
+    def path_dir(self):
+        return os.path.join(self.conversation.path_dir, 'file-transfer')
+
+    def send_data(self, data):
+        return fork(self.connection.send, data)
+
+    def stop(self):
+        if self.connection:
+            self.connection.remove_manager()
+
+    def save_file_bytes(self, file_path, file_bytes):
+        with open(file_path, 'wb') as f:
+            f.write(file_bytes)
+
+    def create_dir(self):
+        self.conversation.create_dir()
+        if not os.path.exists(self.path_dir):
+            os.makedirs(self.path_dir)
+
+    def get_default_file_path(self, file_name):
+        return os.path.join(self.path_dir, file_name)
+
+    @inlineCallbacks
+    def send_request(self, file_path):
+        _, file_name = os.path.split(file_path)
+        if is_valid_file_name:
+            with open(os.path.expanduser(file_path), 'rb') as f:
+                file_ = f.read()
+            checksum = b2a(pyaxo.hash_(file_))
+            element = FileRequestElement(content=file_name,
+                                         size=len(file_),
+                                         checksum=checksum)
+            yield self.conversation.peer._send_element(self.conversation,
+                                                       element)
+            file_transfer = FileTransfer(element, b2a(file_))
+            self.out_requests[checksum] = file_transfer
+            returnValue(file_transfer)
+        else:
+            raise errors.InvalidFileNameError()
+
+    @inlineCallbacks
+    def send_file(self, element):
+        transfer = self.out_requests.pop(element.checksum)
+        self.out_files[element.checksum] = transfer
+        yield self.conversation.peer._send_element(self.conversation,
+                                                   FileElement(transfer.file_))
+        del self.out_files[element.checksum]
+        returnValue(transfer)
+
+    def receive_request(self, element):
+        if is_valid_file_name(element.content):
+            file_transfer = FileTransfer(element)
+            self.in_requests[element.checksum] = file_transfer
+            return file_transfer
+        else:
+            raise errors.InvalidFileNameError()
+
+    @inlineCallbacks
+    def accept_request(self, checksum, file_path=None):
+        transfer = self.in_requests[checksum]
+
+        if file_path:
+            transfer.file_path = os.path.abspath(os.path.expanduser(file_path))
+        else:
+            file_name = transfer.element.content
+            transfer.file_path = self.get_default_file_path(file_name)
+            self.create_dir()
+        with open(transfer.file_path, 'wb'):
+            # just check if this file can be opened
+            pass
+
+        yield self.conversation.peer._send_element(
+            self.conversation,
+            FileRequestElement(FileRequestElement.request_accepted,
+                               checksum=checksum))
+        self.in_files[checksum] = transfer
+        del self.in_requests[checksum]
+        returnValue(transfer)
+
+    def receive_file(self, element):
+        file_ = element.content
+        file_bytes = a2b(file_)
+        checksum = b2a(pyaxo.hash_(file_bytes))
+        try:
+            transfer = self.in_files[checksum]
+        except KeyError:
+            raise errors.UnmessageError(
+                'The received file does not match any of the accepted '
+                'checksums')
+        else:
+            if len(file_bytes) == transfer.element.size:
+                transfer.file_ = file_
+                return transfer
+            else:
+                raise errors.UnmessageError(
+                    'The size of the received file does not match the one '
+                    'that was accepted')
+
+    def save_received_file(self, checksum, file_path=None):
+        try:
+            transfer = self.in_files[checksum]
+        except KeyError:
+            raise errors.UnmessageError('Received file not found')
+        else:
+            if file_path:
+                transfer.file_path = os.path.abspath(os.path.expanduser(
+                    file_path))
+            self.save_file_bytes(transfer.file_path,
+                                 file_bytes=a2b(transfer.file_))
+            del self.in_files[checksum]
+
+
+@attr.s
+class FileTransfer(object):
+    element = attr.ib(
+        validator=attr.validators.instance_of(FileRequestElement))
+    file_ = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    file_path = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
 
 
 @attr.s
