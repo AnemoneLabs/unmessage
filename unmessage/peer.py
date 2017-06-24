@@ -1747,6 +1747,7 @@ class _ConversationFactory(Factory, object):
 class _ConversationProtocol(NetstringReceiver, object):
     type_regular = 'reg'
     type_untalk = untalk.UntalkSession.type_
+    type_file = FileSession.type_
 
     factory = attr.ib(
         validator=attr.validators.instance_of(_ConversationFactory))
@@ -1778,7 +1779,8 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     def stringReceived(self, string):
         try:
-            if self.type_ == _ConversationProtocol.type_regular:
+            if self.type_ in [_ConversationProtocol.type_regular,
+                              _ConversationProtocol.type_file]:
                 self.manager.queue_in_data.put([string, self])
             elif self.type_ == _ConversationProtocol.type_untalk:
                 self.manager.receive_data(string)
