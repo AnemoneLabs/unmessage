@@ -44,6 +44,14 @@ class OfflinePeerError(UnmessageError):
             message=message)
 
 
+class InactiveManagerError(UnmessageError):
+    def __init__(self, contact):
+        super(InactiveManagerError, self).__init__(
+            title='Inactive manager error',
+            message=('This feature cannot be used without a connection to '
+                     '{}'.format(contact)))
+
+
 class InvalidElementError(UnmessageError):
     def __init__(self):
         super(InvalidElementError, self).__init__(
