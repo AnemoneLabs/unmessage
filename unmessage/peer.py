@@ -522,16 +522,17 @@ class Peer(object):
         try:
             # pack the ``RegularPacket`` into a ``str`` and send it
             yield manager.send_data(str(reg_packet))
-        except Exception as failure:
+        except Exception as e:
             # TODO handle remaining packets and close the conversation
             # somewhere else
             conversation.close()
 
-            e = errors.ConnectionLostError()
-            e.title += ' - ' + failure.title
-            e.message += ' - ' + failure.message
+            error = errors.ConnectionLostError(conversation.contact.name)
+            error.title += ' - ' + str(type(e))
+            if error.message:
+                error.message += ' - ' + e.message
 
-            raise Failure(e)
+            raise Failure(error)
         else:
             element = self._process_element_packet(
                 packet,
