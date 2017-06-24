@@ -1852,7 +1852,12 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     def send(self, string):
         with self._lock_send:
-            self.sendString(string)
+            if len(string) <= self.MAX_LENGTH:
+                self.sendString(string)
+            else:
+                raise ValueError('A packet with length of {} cannot be send '
+                                 '(maximum {})'.format(len(string),
+                                                       self.MAX_LENGTH))
 
 
 MANAGER_CLASSES = [untalk.UntalkSession,
