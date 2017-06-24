@@ -1779,7 +1779,8 @@ class _ConversationProtocol(NetstringReceiver, object):
             self.sendString(string)
 
 
-MANAGER_CLASSES = [untalk.UntalkSession]
+MANAGER_CLASSES = [untalk.UntalkSession,
+                   FileSession]
 
 
 def get_manager_class(element):
