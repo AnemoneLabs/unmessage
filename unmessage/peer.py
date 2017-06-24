@@ -869,6 +869,32 @@ class Peer(object):
                        lambda failure: self._notify_error(conversation,
                                                           failure))
 
+    @inlineCallbacks
+    def _send_file(self, conversation, file_path):
+        if conversation.is_active:
+            file_session = (conversation.file_session or
+                            conversation.init_file())
+            result = yield file_session.send_request(file_path)
+            returnValue(result)
+        else:
+            # TODO automatically connect and send request
+            raise errors.InactiveManagerError(conversation.contact.name)
+
+    @inlineCallbacks
+    def _accept_file(self, conversation, checksum, file_path=None):
+        if conversation.is_active:
+            result = yield conversation.file_session.accept_request(checksum,
+                                                                    file_path)
+            returnValue(result)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
+
+    def _save_file(self, conversation, checksum, file_path=None):
+        if conversation.is_active:
+            conversation.file_session.save_received_file(checksum, file_path)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
+
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
         if not auth_session or auth_session.is_waiting or \
@@ -1045,6 +1071,21 @@ class Peer(object):
                    args=(self.get_conversation(name), plaintext,))
         t.daemon = True
         t.start()
+
+    @inlineCallbacks
+    def send_file(self, name, file_path):
+        result = yield self._send_file(self.get_conversation(name), file_path)
+        returnValue(result)
+
+    @inlineCallbacks
+    def accept_file(self, name, checksum, file_path=None):
+        result = yield self._accept_file(self.get_conversation(name),
+                                         checksum,
+                                         file_path)
+        returnValue(result)
+
+    def save_file(self, name, checksum, file_path=None):
+        self._save_file(self.get_conversation(name), checksum, file_path)
 
     def authenticate(self, name, secret):
         t = Thread(target=self._authenticate,
