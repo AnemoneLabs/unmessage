@@ -1172,6 +1172,10 @@ class Conversation(object):
             return None
 
     @property
+    def path_dir(self):
+        return os.path.join(self.peer._path_peer_dir, self.contact.name)
+
+    @property
     def untalk_session(self):
         return self._get_manager(elements.UntalkElement.type_)
 
