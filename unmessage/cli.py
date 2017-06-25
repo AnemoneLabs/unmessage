@@ -27,6 +27,12 @@ COMMANDS = {
                ''],
     '/delete': ['delete conversation with a peer',
                 '<peer_name>'],
+    '/file-accept': ['accept receiving a file from a peer',
+                     '<peer_name> <checksum> [<target_path>]'],
+    '/file-save': ['save a file sent by a peer',
+                   '<peer_name> <checksum> [<target_path>]'],
+    '/file-send': ['send a file to a peer',
+                   '<peer_name> <source_path>'],
     '/help': ['display commands that ' + APP_NAME + ' responds to',
               ''],
     '/identity': ['display your identity in the format '
@@ -360,6 +366,48 @@ class Cli(PeerUi):
                 self.active_conv = conv
                 self.peer.send_message(name, message)
 
+    def send_file(self, name, file_path):
+        def file_sent(result):
+            self.display_info(
+                'File request for "{}" sent to {}'.format(
+                    result.element.content,
+                    name))
+
+        def file_failed(failure):
+            if failure.check(errors.UnmessageError):
+                error = failure.value
+            else:
+                error = errors.UnmessageError(failure.getErrorMessage())
+            self.display_attention(error.message, error.title, error=True)
+
+        d = self.peer.send_file(name, file_path)
+        d.addCallbacks(file_sent, file_failed)
+
+    def accept_file(self, name, checksum, file_path=None):
+        def file_sent(result):
+            self.display_info(
+                'Accepted receiving "{}" from {}'.format(
+                    result.element.content,
+                    name))
+
+        def file_failed(failure):
+            if failure.check(errors.UnmessageError):
+                error = failure.value
+            else:
+                error = errors.UnmessageError(failure.getErrorMessage())
+            self.display_attention(error.message, error.title, error=True)
+
+        d = self.peer.accept_file(name, checksum, file_path)
+        d.addCallbacks(file_sent, file_failed)
+
+    def save_file(self, name, checksum, file_path=None):
+        try:
+            self.peer.save_file(name, checksum, file_path)
+        except Exception as e:
+            self.display_attention(title=str(type(e)),
+                                   message=e.message,
+                                   error=True)
+
     def untalk(self, name, input_device=None, output_device=None):
         try:
             self.peer.untalk(name, input_device, output_device)
@@ -552,6 +600,15 @@ class Cli(PeerUi):
     def call_help(self):
         self.display_help()
 
+    def call_file_accept(self, name, checksum, file_path=None):
+        self.accept_file(name, checksum, file_path)
+
+    def call_file_save(self, name, checksum, file_path=None):
+        self.save_file(name, checksum, file_path)
+
+    def call_file_send(self, name, file_path):
+        self.send_file(name, file_path)
+
     def call_identity(self):
         self.display_identity()
 
@@ -676,6 +733,16 @@ class _ConversationHandler(ConversationUi):
                                        error=True)
 
         self.update_prefix()
+
+    def notify_in_file_request(self, notification):
+        cmd = '/file-accept'
+        self.cli.display_info(
+            '{} - accept using "{} {} {} [<taget_path>]"'.format(
+                notification.message,
+                cmd,
+                self.conversation.contact.name,
+                notification.transfer.element.checksum),
+            notification.title)
 
 
 def sync_curses(f):

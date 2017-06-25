@@ -1,4 +1,4 @@
-from unmessage.elements import ElementPayload
+from unmessage.elements import Element
 
 
 CONTENT = 'foo'
@@ -6,18 +6,18 @@ SERIALIZED_ELEMENT_PAYLOAD = '{{"content": "{}"}}'.format(CONTENT)
 
 
 def test_serialize_element_payload():
-    e = ElementPayload(CONTENT)
+    e = Element(CONTENT)
 
     assert e.serialize() == SERIALIZED_ELEMENT_PAYLOAD
 
 
 def test_deserialize_element_payload():
-    assert (ElementPayload.deserialize(SERIALIZED_ELEMENT_PAYLOAD) ==
-            ElementPayload(CONTENT))
+    assert (Element.deserialize(SERIALIZED_ELEMENT_PAYLOAD) ==
+            Element(CONTENT))
 
 
 def test_serialize_deserialize_element_payload():
-    e0 = ElementPayload(CONTENT)
-    e1 = ElementPayload.deserialize(e0.serialize())
+    e0 = Element(CONTENT)
+    e1 = Element.deserialize(e0.serialize())
 
     assert e1 == e0

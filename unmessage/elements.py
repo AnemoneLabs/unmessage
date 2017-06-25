@@ -5,7 +5,14 @@ from nacl.utils import random
 from pyaxo import b2a
 
 
-class Element(dict):
+class PartialElement(dict):
+    @classmethod
+    def from_packet(cls, packet, sender, receiver):
+        partial = cls(sender, receiver,
+                      packet.type_, packet.id_, packet.part_len)
+        partial[packet.part_num] = packet.payload
+        return partial
+
     def __init__(self, sender, receiver, type_, id_, part_len):
         self.sender = sender
         self.receiver = receiver
@@ -20,12 +27,34 @@ class Element(dict):
     def is_complete(self):
         return len(self) == self.part_len
 
+    def to_element(self):
+        element = Element.build(self.type_, str(self))
+        element.sender = self.sender
+        element.receiver = self.receiver
+        return element
+
 
 @attr.s
-class ElementPayload(object):
-    filtered_attr_names = None
+class Element(object):
+    element_classes = None
+    filtered_attr_names = ['content']
 
     content = attr.ib(default=None)
+    sender = attr.ib(default=None)
+    receiver = attr.ib(default=None)
+
+    @classmethod
+    def build(cls, type_, data):
+        try:
+            return cls.get_element_classes()[type_].deserialize(data)
+        except KeyError:
+            return Exception('Unknown element type: {}'.format(type_))
+
+    @classmethod
+    def get_element_classes(cls):
+        if not cls.element_classes:
+            cls.element_classes = {c.type_: c for c in cls.__subclasses__()}
+        return cls.element_classes
 
     @classmethod
     def filter_attrs(cls, attribute, value):
@@ -38,45 +67,79 @@ class ElementPayload(object):
     def deserialize(cls, data):
         return cls(**json.loads(data))
 
+    def __str__(self):
+        return self.content
+
     def serialize(self):
         return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
 
-class RequestElement:
+@attr.s
+class RequestElement(Element):
     type_ = 'req'
     request_accepted = 'accepted'
 
 
-class UntalkElement:
+@attr.s
+class UntalkElement(Element):
     type_ = 'untalk'
 
 
-class PresenceElement:
+@attr.s
+class PresenceElement(Element):
     type_ = 'pres'
     status_online = 'online'
     status_offline = 'offline'
 
 
-class MessageElement:
+@attr.s
+class MessageElement(Element):
     type_ = 'msg'
 
 
-class AuthenticationElement:
+@attr.s
+class AuthenticationElement(Element):
     type_ = 'auth'
 
 
 @attr.s
-class FileRequestElement(ElementPayload):
+class FileRequestElement(Element):
+    filtered_attr_names = 'content size checksum'.split()
+
     type_ = 'filereq'
     request_accepted = 'accepted'
 
     size = attr.ib(default=None)
     checksum = attr.ib(default=None)
 
+    @classmethod
+    def is_valid_request(cls, element):
+        # TODO improve this validator
+        return (
+            isinstance(element, cls) and
+            isinstance(element.content, unicode) and len(element.content) and
+            isinstance(element.size, int) and element.size > 0 and
+            isinstance(element.checksum, unicode) and len(element.checksum))
+
+    @classmethod
+    def is_valid_accept(cls, element):
+        # TODO improve this validator
+        return (
+            isinstance(element, cls) and
+            isinstance(element.content, unicode) and len(element.content) and
+            element.size is None and
+            isinstance(element.checksum, unicode) and len(element.checksum))
+
 
 @attr.s
-class FileElement(ElementPayload):
+class FileElement(Element):
     type_ = 'file'
+
+    @classmethod
+    def is_valid_file(cls, element):
+        # TODO improve this validator
+        return (isinstance(element, cls) and
+                isinstance(element.content, unicode) and len(element.content))
 
 
 REGULAR_ELEMENT_TYPES = [RequestElement.type_,

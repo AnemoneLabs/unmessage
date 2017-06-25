@@ -35,10 +35,11 @@ from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
+from .elements import FileRequestElement, FileElement
 from .ui import ConversationUi, PeerUi
-from .utils import Address
-from .utils import is_valid_identity
-from .utils import raise_invalid_name, raise_invalid_shared_key
+from .utils import fork, join, Address
+from .utils import is_valid_identity, is_valid_file_name
+from .utils import raise_if_not, raise_invalid_name, raise_invalid_shared_key
 from .smp import SMP
 
 
@@ -143,6 +144,10 @@ class Peer(object):
         return os.path.join(self._path_peer_dir, 'peer.log')
 
     @property
+    def path_conversations_dir(self):
+        return os.path.join(self._path_peer_dir, 'conversations')
+
+    @property
     def _contacts(self):
         return self._info.contacts
 
@@ -235,6 +240,8 @@ class Peer(object):
     def _create_peer_dir(self):
         if not os.path.exists(self._path_peer_dir):
             os.makedirs(self._path_peer_dir)
+        if not os.path.exists(self.path_conversations_dir):
+            os.makedirs(self.path_conversations_dir)
         if not os.path.exists(self._path_tor_dir):
             os.makedirs(self._path_tor_dir)
 
@@ -280,15 +287,13 @@ class Peer(object):
                 if offline and c.is_active:
                     self._presence_convs.append(c.contact.name)
                     d = self._send_element(
-                        c, PresenceElement.type_,
-                        content=PresenceElement.status_offline)
+                        c, PresenceElement(PresenceElement.status_offline))
                     d.addCallbacks(
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
                     d = self._send_element(
-                        c, PresenceElement.type_,
-                        content=PresenceElement.status_online)
+                        c, PresenceElement(PresenceElement.status_online))
                     d.addCallbacks(
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
@@ -435,7 +440,7 @@ class Peer(object):
         del self._conversations[conversation.contact.name]
 
     @inlineCallbacks
-    def _send_element(self, conv, type_, content, handshake_key=None):
+    def _send_element(self, conv, element, handshake_key=None):
         """Create an ``ElementPacket``, connect (if needed) and send it.
 
         Return a ``Deferred`` that is fired after the the element is sent using
@@ -447,15 +452,16 @@ class Peer(object):
             - Split the element into multiple packets if needed
             - Maybe use a ``DeferredList``
         """
-        packet = packets.ElementPacket(type_, payload=content)
+        packet = packets.ElementPacket(element.type_,
+                                       payload=element.serialize())
 
-        manager = yield self._get_active_manager(packet, conv)
+        manager = yield self._get_active_manager(element, conv)
         result = yield self._send_packet(packet, manager, conv, handshake_key)
 
         returnValue(result)
 
     @inlineCallbacks
-    def _get_active_manager(self, packet, conversation):
+    def _get_active_manager(self, element, conversation):
         """Get a manager with an active connection to send the element.
 
         Return a ``Deferred`` that is fired with a conversation manager capable
@@ -464,9 +470,8 @@ class Peer(object):
         connection. Otherwise, use the conversation's current active
         connection.
         """
-        # TODO handle an element instead of a packet
         def connection_failed(failure):
-            if packet.type_ != PresenceElement.type_:
+            if element.type_ != PresenceElement.type_:
                 if failure.check(txtorcon.socks.HostUnreachableError,
                                  txtorcon.socks.TtlExpiredError):
                     raise Failure(errors.OfflinePeerError(
@@ -487,8 +492,9 @@ class Peer(object):
                 connection_failed(Failure(e))
             else:
                 conversation.set_active(connection, Conversation.state_conv)
-        elif packet.type_ not in elements.REGULAR_ELEMENT_TYPES:
-            manager = conversation._get_manager(packet.type_)
+        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager_class = get_manager_class(element)
+            manager = conversation._get_manager(manager_class.type_)
 
             if not manager.connection:
                 try:
@@ -500,7 +506,7 @@ class Peer(object):
                     connection_failed(Failure(e))
                 else:
                     manager = conversation.add_connection(connection,
-                                                          packet.type_)
+                                                          manager_class.type_)
 
         returnValue(manager)
 
@@ -516,16 +522,17 @@ class Peer(object):
         try:
             # pack the ``RegularPacket`` into a ``str`` and send it
             yield manager.send_data(str(reg_packet))
-        except Exception as failure:
+        except Exception as e:
             # TODO handle remaining packets and close the conversation
             # somewhere else
             conversation.close()
 
-            e = errors.ConnectionLostError()
-            e.title += ' - ' + failure.title
-            e.message += ' - ' + failure.message
+            error = errors.ConnectionLostError(conversation.contact.name)
+            error.title += ' - ' + str(type(e))
+            if error.message:
+                error.message += ' - ' + e.message
 
-            raise Failure(e)
+            raise Failure(error)
         else:
             element = self._process_element_packet(
                 packet,
@@ -556,31 +563,30 @@ class Peer(object):
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
             try:
-                # get the ``Element`` that corresponds to the
+                # get the ``PartialElement`` that corresponds to the
                 # ``ElementPacket.id_`` in case it is one of the parts of an
                 # incomplete element
                 element = conversation.elements.pop(packet.id_)
             except KeyError:
-                # create an ``Element`` as there are no incomplete elements
-                # with the respective ``ElementPacket.id_``
-                element = elements.Element(sender,
-                                           receiver,
-                                           type_=packet.type_,
-                                           id_=packet.id_,
-                                           part_len=packet.part_len)
-
-            # add the part from the packet
-            element[packet.part_num] = packet.payload
+                # create an ``PartialElement`` as there are no incomplete
+                # elements with the respective ``ElementPacket.id_``
+                element = elements.PartialElement.from_packet(packet,
+                                                              sender,
+                                                              receiver)
+            else:
+                # add the part from the packet
+                element[packet.part_num] = packet.payload
 
             if element.is_complete:
-                # the ``Element`` does not have to be stored as either it
-                # fitted in a single packet or all of its parts have been
+                # the ``PartialElement`` does not have to be stored as either
+                # it fitted in a single packet or all of its parts have been
                 # transmitted (the ``packet`` contained the last remaining
                 # part)
                 pass
             else:
-                # store the ``Element`` in the incomplete elements ``dict`` as
-                # it has been split in multiple parts, yet to be transmitted
+                # store the ``PartialElement`` in the incomplete elements
+                # ``dict`` as it has been split in multiple parts, yet to be
+                # transmitted
                 conversation.elements[element.id_] = element
             return element
 
@@ -812,8 +818,7 @@ class Peer(object):
             mode=True)
 
         d = self._send_element(conv,
-                               RequestElement.type_,
-                               content=RequestElement.request_accepted,
+                               RequestElement(RequestElement.request_accepted),
                                handshake_key=handshake_keys.pub)
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conv, failure))
@@ -834,8 +839,8 @@ class Peer(object):
                     else:
                         d = self._send_element(
                             conversation,
-                            UntalkElement.type_,
-                            content=b2a(untalk_session.handshake_keys.pub))
+                            UntalkElement(
+                                b2a(untalk_session.handshake_keys.pub)))
                         d.addCallbacks(
                             lambda args: self._element_parser.parse(*args),
                             lambda failure: self._notify_error(conversation,
@@ -860,12 +865,36 @@ class Peer(object):
         return True
 
     def _send_message(self, conversation, plaintext):
-        d = self._send_element(conversation,
-                               MessageElement.type_,
-                               content=plaintext)
+        d = self._send_element(conversation, MessageElement(plaintext))
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conversation,
                                                           failure))
+
+    @inlineCallbacks
+    def _send_file(self, conversation, file_path):
+        if conversation.is_active:
+            file_session = (conversation.file_session or
+                            conversation.init_file())
+            result = yield file_session.send_request(file_path)
+            returnValue(result)
+        else:
+            # TODO automatically connect and send request
+            raise errors.InactiveManagerError(conversation.contact.name)
+
+    @inlineCallbacks
+    def _accept_file(self, conversation, checksum, file_path=None):
+        if conversation.is_active:
+            result = yield conversation.file_session.accept_request(checksum,
+                                                                    file_path)
+            returnValue(result)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
+
+    def _save_file(self, conversation, checksum, file_path=None):
+        if conversation.is_active:
+            conversation.file_session.save_received_file(checksum, file_path)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
 
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
@@ -874,10 +903,10 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        d = self._send_element(conversation,
-                               AuthenticationElement.type_,
-                               content=auth_session.start(
-                                   conversation.keys.auth_secret_key + secret))
+        d = self._send_element(
+            conversation,
+            AuthenticationElement(auth_session.start(
+                conversation.keys.auth_secret_key + secret)))
         d.addCallbacks(lambda args: self._element_parser.parse(*args),
                        lambda failure: self._notify_error(conversation,
                                                           failure))
@@ -1044,6 +1073,21 @@ class Peer(object):
         t.daemon = True
         t.start()
 
+    @inlineCallbacks
+    def send_file(self, name, file_path):
+        result = yield self._send_file(self.get_conversation(name), file_path)
+        returnValue(result)
+
+    @inlineCallbacks
+    def accept_file(self, name, checksum, file_path=None):
+        result = yield self._accept_file(self.get_conversation(name),
+                                         checksum,
+                                         file_path)
+        returnValue(result)
+
+    def save_file(self, name, checksum, file_path=None):
+        self._save_file(self.get_conversation(name), checksum, file_path)
+
     def authenticate(self, name, secret):
         t = Thread(target=self._authenticate,
                    args=(self.get_conversation(name), secret,))
@@ -1177,6 +1221,19 @@ class Conversation(object):
             return None
 
     @property
+    def path_dir(self):
+        return os.path.join(self.peer.path_conversations_dir,
+                            self.contact.name)
+
+    @property
+    def file_session(self):
+        return self._get_manager(FileSession.type_)
+
+    @file_session.setter
+    def _file_session(self, manager):
+        self._set_manager(manager, FileSession.type_)
+
+    @property
     def untalk_session(self):
         return self._get_manager(elements.UntalkElement.type_)
 
@@ -1196,6 +1253,10 @@ class Conversation(object):
     def remove_manager(self, manager):
         manager.stop()
         del self._managers[manager.type_]
+
+    def create_dir(self):
+        if not os.path.exists(self.path_dir):
+            os.makedirs(self.path_dir)
 
     def check_in_data(self):
         while True:
@@ -1300,10 +1361,19 @@ class Conversation(object):
         self.connection = None
         self.close()
 
+    def init_file(self, connection=None):
+        self._file_session = FileSession(self)
+        if connection:
+            self.add_connection(connection, FileSession.type_)
+        return self.file_session
+
+    def stop_file(self):
+        self.remove_manager(self.file_session)
+
     def init_untalk(self, connection=None, other_handshake_key=None):
         self._untalk_session = untalk.UntalkSession(self, other_handshake_key)
         if connection:
-            self.add_connection(connection, elements.UntalkElement.type_)
+            self.add_connection(connection, untalk.UntalkSession.type_)
         return self.untalk_session
 
     def start_untalk(self, other_handshake_key=None):
@@ -1387,8 +1457,215 @@ class AuthSession(object):
 
 
 @attr.s
+class FileSession(object):
+    type_ = 'file'
+    element_classes = [FileRequestElement,
+                       FileElement]
+
+    conversation = attr.ib(validator=attr.validators.instance_of(Conversation),
+                           repr=False)
+    connection = attr.ib(init=False, default=None, repr=False)
+
+    in_requests = attr.ib(init=False, default=attr.Factory(dict))
+    in_files = attr.ib(init=False, default=attr.Factory(dict))
+
+    out_requests = attr.ib(init=False, default=attr.Factory(dict))
+    out_files = attr.ib(init=False, default=attr.Factory(dict))
+
+    @classmethod
+    @inlineCallbacks
+    def parse_request_element(cls, element, conversation, connection=None):
+        if FileRequestElement.is_valid_request(element):
+            manager = (conversation.file_session or
+                       conversation.init_file(connection))
+
+            transfer = manager.receive_request(element)
+            conversation.ui.notify_in_file_request(
+                notifications.FileNotification(
+                    '{} wishes to send the file "{}" ({} bytes)'.format(
+                        conversation.contact.name,
+                        element.content,
+                        element.size),
+                    transfer))
+            returnValue(transfer)
+        elif FileRequestElement.is_valid_accept(element):
+            manager = conversation.file_session
+            if manager:
+                transfer = yield manager.send_file(element)
+                conversation.ui.notify(
+                    notifications.FileNotification(
+                        'Finished sending "{}" to {}'.format(
+                            transfer.element.content,
+                            conversation.contact.name),
+                        transfer))
+                returnValue(transfer)
+            else:
+                raise errors.UnmessageError(
+                    'Unexpected FileRequestElement received, accepting a file '
+                    'without an active manager')
+        else:
+            raise errors.InvalidElementError()
+
+    @classmethod
+    def parse_file_element(cls, element, conversation):
+        raise_if_not(FileElement.is_valid_file,
+                     errors.InvalidElementError)(value=element)
+
+        manager = conversation.file_session
+        if manager:
+            transfer = manager.receive_file(element)
+            manager.save_received_file(transfer.element.checksum)
+            conversation.ui.notify(
+                notifications.FileNotification(
+                    'Finished receiving "{}" from {}, saved at {}'.format(
+                        transfer.element.content,
+                        conversation.contact.name,
+                        transfer.file_path),
+                    transfer))
+        else:
+            raise errors.UnmessageError(
+                'Unexpected FileElement received without an active manager')
+
+    @property
+    def queue_in_data(self):
+        return self.conversation.queue_in_data
+
+    @property
+    def path_dir(self):
+        return os.path.join(self.conversation.path_dir, 'file-transfer')
+
+    def send_data(self, data):
+        return fork(self.connection.send, data)
+
+    def stop(self):
+        if self.connection:
+            self.connection.remove_manager()
+
+    def save_file_bytes(self, file_path, file_bytes):
+        with open(file_path, 'wb') as f:
+            f.write(file_bytes)
+
+    def create_dir(self):
+        self.conversation.create_dir()
+        if not os.path.exists(self.path_dir):
+            os.makedirs(self.path_dir)
+
+    def get_default_file_path(self, file_name):
+        return os.path.join(self.path_dir, file_name)
+
+    @inlineCallbacks
+    def send_request(self, file_path):
+        _, file_name = os.path.split(file_path)
+        if is_valid_file_name:
+            with open(os.path.expanduser(file_path), 'rb') as f:
+                file_ = f.read()
+            checksum = b2a(pyaxo.hash_(file_))
+            element = FileRequestElement(content=file_name,
+                                         size=len(file_),
+                                         checksum=checksum)
+            yield self.conversation.peer._send_element(self.conversation,
+                                                       element)
+            file_transfer = FileTransfer(element, b2a(file_))
+            self.out_requests[checksum] = file_transfer
+            returnValue(file_transfer)
+        else:
+            raise errors.InvalidFileNameError()
+
+    @inlineCallbacks
+    def send_file(self, element):
+        transfer = self.out_requests.pop(element.checksum)
+        self.out_files[element.checksum] = transfer
+        yield self.conversation.peer._send_element(self.conversation,
+                                                   FileElement(transfer.file_))
+        del self.out_files[element.checksum]
+        returnValue(transfer)
+
+    def receive_request(self, element):
+        if is_valid_file_name(element.content):
+            file_transfer = FileTransfer(element)
+            self.in_requests[element.checksum] = file_transfer
+            return file_transfer
+        else:
+            raise errors.InvalidFileNameError()
+
+    @inlineCallbacks
+    def accept_request(self, checksum, file_path=None):
+        transfer = self.in_requests[checksum]
+
+        if file_path:
+            transfer.file_path = os.path.abspath(os.path.expanduser(file_path))
+        else:
+            file_name = transfer.element.content
+            transfer.file_path = self.get_default_file_path(file_name)
+            self.create_dir()
+        with open(transfer.file_path, 'wb'):
+            # just check if this file can be opened
+            pass
+
+        yield self.conversation.peer._send_element(
+            self.conversation,
+            FileRequestElement(FileRequestElement.request_accepted,
+                               checksum=checksum))
+        self.in_files[checksum] = transfer
+        del self.in_requests[checksum]
+        returnValue(transfer)
+
+    def receive_file(self, element):
+        file_ = element.content
+        file_bytes = a2b(file_)
+        checksum = b2a(pyaxo.hash_(file_bytes))
+        try:
+            transfer = self.in_files[checksum]
+        except KeyError:
+            raise errors.UnmessageError(
+                'The received file does not match any of the accepted '
+                'checksums')
+        else:
+            if len(file_bytes) == transfer.element.size:
+                transfer.file_ = file_
+                return transfer
+            else:
+                raise errors.UnmessageError(
+                    'The size of the received file does not match the one '
+                    'that was accepted')
+
+    def save_received_file(self, checksum, file_path=None):
+        try:
+            transfer = self.in_files[checksum]
+        except KeyError:
+            raise errors.UnmessageError('Received file not found')
+        else:
+            if file_path:
+                transfer.file_path = os.path.abspath(os.path.expanduser(
+                    file_path))
+            self.save_file_bytes(transfer.file_path,
+                                 file_bytes=a2b(transfer.file_))
+            del self.in_files[checksum]
+
+
+@attr.s
+class FileTransfer(object):
+    element = attr.ib(
+        validator=attr.validators.instance_of(FileRequestElement))
+    file_ = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    file_path = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+
+
+@attr.s
 class ElementParser(object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
+
+    def _parse_filereq_element(self, element, conversation, connection=None):
+        join(FileSession.parse_request_element(element,
+                                               conversation,
+                                               connection))
+
+    def _parse_file_element(self, element, conversation, connection=None):
+        FileSession.parse_file_element(element, conversation)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
         message = None
@@ -1460,8 +1737,7 @@ class ElementParser(object):
                 if next_buffer:
                     d = self.peer._send_element(
                         conversation,
-                        type_=AuthenticationElement.type_,
-                        content=next_buffer)
+                        AuthenticationElement(next_buffer))
                     d.addCallbacks(
                         lambda args: self.peer._element_parser.parse(*args),
                         lambda failure: self.peer._notify_error(conversation,
@@ -1485,8 +1761,8 @@ class ElementParser(object):
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
-            # it can be parsed as all parts have been added to the ``Element``
-            # or it is composed of a single part
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
             try:
                 method = getattr(self,
                                  '_parse_{}_element'.format(element.type_))
@@ -1494,9 +1770,21 @@ class ElementParser(object):
                 # TODO handle elements with unknown types
                 pass
             else:
-                method(element, conversation, connection)
+                try:
+                    method(element.to_element(), conversation, connection)
+                except Exception as e:
+                    message = ('Error while parsing element from {} in '
+                               '"{}"'.format(conversation.contact.name,
+                                             method))
+                    if e.message:
+                        message += ' - ' + e.message
+                    self.peer._notify_error(
+                        conversation,
+                        errors.UnmessageError(title=str(type(e)),
+                                              message=message))
         else:
-            # the ``Element`` has parts yet to be transmitted (sent/received)
+            # the ``PartialElement`` has parts yet to be
+            # transmitted (sent/received)
             pass
 
 
@@ -1515,7 +1803,8 @@ class _ConversationFactory(Factory, object):
 @attr.s
 class _ConversationProtocol(NetstringReceiver, object):
     type_regular = 'reg'
-    type_untalk = elements.UntalkElement.type_
+    type_untalk = untalk.UntalkSession.type_
+    type_file = FileSession.type_
 
     factory = attr.ib(
         validator=attr.validators.instance_of(_ConversationFactory))
@@ -1547,7 +1836,8 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     def stringReceived(self, string):
         try:
-            if self.type_ == _ConversationProtocol.type_regular:
+            if self.type_ in [_ConversationProtocol.type_regular,
+                              _ConversationProtocol.type_file]:
                 self.manager.queue_in_data.put([string, self])
             elif self.type_ == _ConversationProtocol.type_untalk:
                 self.manager.receive_data(string)
@@ -1562,7 +1852,25 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     def send(self, string):
         with self._lock_send:
-            self.sendString(string)
+            if len(string) <= self.MAX_LENGTH:
+                self.sendString(string)
+            else:
+                raise ValueError('A packet with length of {} cannot be send '
+                                 '(maximum {})'.format(len(string),
+                                                       self.MAX_LENGTH))
+
+
+MANAGER_CLASSES = [untalk.UntalkSession,
+                   FileSession]
+
+
+def get_manager_class(element):
+    try:
+        return [manager_class
+                for manager_class in MANAGER_CLASSES
+                if type(element) in manager_class.element_classes][0]
+    except IndexError:
+        return errors.ManagerNotFoundError(type(element))
 
 
 @attr.s

@@ -39,6 +39,8 @@ MAC_SIZE = 16
 @attr.s
 class UntalkSession(object):
     type_ = UntalkElement.type_
+    element_classes = [UntalkElement]
+
     state_sent = 'sent'
     state_received = 'rcv'
     state_talking = 'talk'

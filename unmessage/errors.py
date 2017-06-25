@@ -44,6 +44,28 @@ class OfflinePeerError(UnmessageError):
             message=message)
 
 
+class InactiveManagerError(UnmessageError):
+    def __init__(self, contact):
+        super(InactiveManagerError, self).__init__(
+            title='Inactive manager error',
+            message=('This feature cannot be used without a connection to '
+                     '{}'.format(contact)))
+
+
+class InvalidElementError(UnmessageError):
+    def __init__(self):
+        super(InvalidElementError, self).__init__(
+            title='Invalid element error',
+            message='The element provided is not valid')
+
+
+class InvalidFileNameError(UnmessageError):
+    def __init__(self):
+        super(InvalidFileNameError, self).__init__(
+            title='Invalid file name error',
+            message='The file name provided is not valid')
+
+
 class InvalidIdentityError(UnmessageError):
     def __init__(self):
         super(InvalidIdentityError, self).__init__(
@@ -85,6 +107,13 @@ class MalformedPacketError(UnmessageError):
             title='Malformed packet error',
             message='The data provided cannot be used to build a '
                     '{} packet'.format(packet_type))
+
+
+class ManagerNotFoundError(UnmessageError):
+    def __init__(self, type_):
+        super(ManagerNotFoundError, self).__init__(
+            title='Manager not found error',
+            message='A manager for {} could not be found'.format(type_))
 
 
 class TransportError(UnmessageError):

@@ -28,6 +28,9 @@ class ConversationUi(_Ui):
     def notify_finished_authentication(self, notification):
         pass
 
+    def notify_in_file_request(self, notification):
+        pass
+
 
 class PeerUi(_Ui):
     def notify_bootstrap(self, notification):

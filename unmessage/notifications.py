@@ -33,3 +33,11 @@ class ElementNotification(UnmessageNotification):
             message or str(element),
             title)
         self.element = element
+
+
+class FileNotification(UnmessageNotification):
+    def __init__(self, message, transfer, title=None):
+        super(FileNotification, self).__init__(
+            message,
+            title)
+        self.transfer = transfer
