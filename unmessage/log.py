@@ -19,7 +19,8 @@ NAMESPACES = [
 
 @provider(ILogFilterPredicate)
 def filter_unmessage_event(event):
-    if event['log_namespace'] in NAMESPACES:
+    if (event['log_level'] >= LogLevel.warn or
+            event['log_namespace'] in NAMESPACES):
         return PredicateResult.yes
     else:
         return PredicateResult.no
