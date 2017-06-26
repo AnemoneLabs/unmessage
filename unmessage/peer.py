@@ -293,6 +293,7 @@ class Peer(object):
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
+                    self._presence_convs.append(c.contact.name)
                     d = self._send_element(
                         c, PresenceElement(PresenceElement.status_online))
                     d.addCallbacks(
@@ -300,7 +301,11 @@ class Peer(object):
                         lambda failure: self._notify_error(c, failure))
 
         if self._presence_convs:
-            # wait until all conversations are notified
+            if not offline:
+                self._presence_convs = list()
+                self._presence_event.set()
+
+            # when going offline, wait until all conversations are notified
             self._presence_event.wait()
 
     def _add_intro_manager(self, connection):
