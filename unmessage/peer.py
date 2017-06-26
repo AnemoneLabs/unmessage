@@ -726,23 +726,18 @@ class Peer(object):
 
         return d_tor
 
+    @inlineCallbacks
     def _stop_tor(self):
         if self._onion_service:
             self._ui.notify(
                 notifications.UnmessageNotification(
                     'Removing Onion Service from Tor'))
 
-            e = Event()
+            yield self._onion_service.remove_from_tor(self._tor._protocol)
 
-            def removed(result):
-                self._ui.notify(
-                    notifications.UnmessageNotification(
-                        'Removed Onion Service from Tor'))
-                e.set()
-
-            d = self._onion_service.remove_from_tor(self._tor._protocol)
-            d.addCallback(removed)
-            e.wait()
+            self._ui.notify(
+                notifications.UnmessageNotification(
+                    'Removed Onion Service from Tor'))
 
     def _send_request(self, identity, key):
         if ':' not in identity:
@@ -1012,7 +1007,7 @@ class Peer(object):
         for c in self.conversations:
             c.close()
 
-        self._stop_tor()
+        join(self._stop_tor())
 
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
