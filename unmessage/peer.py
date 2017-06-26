@@ -1784,10 +1784,8 @@ class ElementParser(object):
                                              method))
                     if e.message:
                         message += ' - ' + e.message
-                    self.peer._notify_error(
-                        conversation,
-                        errors.UnmessageError(title=str(type(e)),
-                                              message=message))
+                    e.message = message
+                    self.peer._notify_error(conversation, Failure(e))
         else:
             # the ``PartialElement`` has parts yet to be
             # transmitted (sent/received)
