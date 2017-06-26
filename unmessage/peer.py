@@ -36,6 +36,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
+from .log import begin_logging
 from .ui import ConversationUi, PeerUi
 from .utils import fork, join, Address
 from .utils import is_valid_identity, is_valid_file_name
@@ -942,7 +943,10 @@ class Peer(object):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              local_mode=False):
+              local_mode=False,
+              begin_log=False,
+              begin_log_std=False,
+              log_level=None):
         self._notify_bootstrap('Starting peer')
 
         if local_mode:
@@ -950,6 +954,13 @@ class Peer(object):
             self._local_mode = local_mode
 
         self._create_peer_dir()
+
+        if begin_log:
+            if log_level is None:
+                begin_logging(self.path_log_file, begin_std=begin_log_std)
+            else:
+                begin_logging(self.path_log_file, log_level, begin_log_std)
+
         self._load_peer_info()
         self._update_config()
 

@@ -10,7 +10,7 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
-from .log import begin_logging, Logger, LogLevel
+from .log import Logger, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -248,15 +248,14 @@ class Cli(PeerUi):
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
-
-        begin_logging(self.peer.path_log_file, LogLevel.debug)
-
         self.peer.start(local_server_ip,
                         local_server_port,
                         launch_tor,
                         tor_socks_port,
                         tor_control_port,
-                        local_mode)
+                        local_mode,
+                        begin_log=True,
+                        log_level=LogLevel.debug)
 
     def load_convs(self):
         for c in self.peer.conversations:
