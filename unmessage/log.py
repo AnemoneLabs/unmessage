@@ -9,6 +9,8 @@ from twisted.python.compat import _PY3
 from zope.interface import provider
 
 
+LOG_LEVEL = LogLevel.warn
+
 NAMESPACES = [
     'unmessage.__main__',
     'unmessage.peer',
@@ -76,20 +78,20 @@ def get_file_observer(filepath):
     return textFileLogObserver(io.open(filepath, 'a'))
 
 
-def begin_logging_to_std(name, log_level=LogLevel.info):
+def begin_logging_to_std(name, log_level=LOG_LEVEL):
     logging.basicConfig(level=logging.DEBUG)
     observer = get_filtering_observer(get_std_observer(name), log_level)
 
     globalLogBeginner.beginLoggingTo([observer])
 
 
-def begin_logging_to_file(filepath, log_level=LogLevel.info):
+def begin_logging_to_file(filepath, log_level=LOG_LEVEL):
     observer = get_filtering_observer(get_file_observer(filepath), log_level)
 
     globalLogBeginner.beginLoggingTo([observer])
 
 
-def begin_logging(filepath, log_level=LogLevel.info, begin_std=False):
+def begin_logging(filepath, log_level=LOG_LEVEL, begin_std=False):
     file_observer = get_file_observer(filepath)
     observers = [get_filtering_observer(file_observer, log_level)]
 
