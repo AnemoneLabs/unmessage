@@ -1269,7 +1269,6 @@ class Conversation(object):
             data, connection = self.queue_in_data.get()
             try:
                 method = getattr(self, 'handle_{}_data'.format(self.state))
-                method(data, connection)
             except AttributeError:
                 # the state does not have a "handle" method, which currently is
                 # state_in_req because it should be waiting for the request to
@@ -1281,6 +1280,8 @@ class Conversation(object):
                     errors.CorruptedPacketError) as e:
                 e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
+            else:
+                method(data, connection)
 
     def check_out_data(self):
         while True:
