@@ -4,6 +4,9 @@ class UnmessageError(Exception):
         self.title = title or 'unMessage error'
         self.message = message
 
+    def __str__(self):
+        return self.message
+
 
 class UntalkError(UnmessageError):
     def __init__(self, message, title=None):

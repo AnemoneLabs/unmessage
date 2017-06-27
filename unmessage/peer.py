@@ -20,7 +20,6 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
-from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
 from twisted.python.failure import Failure
 from txtorcon import TorClientEndpoint
@@ -36,6 +35,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
+from .log import begin_logging, loggerFor
 from .ui import ConversationUi, PeerUi
 from .utils import fork, join, Address
 from .utils import is_valid_identity, is_valid_file_name
@@ -103,10 +103,9 @@ class Peer(object):
 
     _state = attr.ib(init=False)
 
-    log = attr.ib(init=False)
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
-        self.log = Logger()
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._info = PeerInfo(port_local_server=PORT)
@@ -227,6 +226,8 @@ class Peer(object):
     def _notify_error(self, conv, error):
         failure = error if isinstance(error, Failure) else Failure(error)
 
+        self.log.error(failure.getTraceback())
+
         if failure.check(errors.ConnectionLostError):
             conv.ui.notify_disconnect(failure.value)
         elif failure.check(errors.OfflinePeerError):
@@ -259,6 +260,7 @@ class Peer(object):
             CONFIG.write(f)
 
     def _save_peer_info(self):
+        self.log.info('Saving peer info')
         self._persistence.save_peer_info(self._info)
 
     def _load_conversations(self):
@@ -292,6 +294,7 @@ class Peer(object):
                         lambda args: self._element_parser.parse(*args),
                         lambda failure: self._notify_error(c, failure))
                 elif not offline and not c.is_active:
+                    self._presence_convs.append(c.contact.name)
                     d = self._send_element(
                         c, PresenceElement(PresenceElement.status_online))
                     d.addCallbacks(
@@ -299,7 +302,16 @@ class Peer(object):
                         lambda failure: self._notify_error(c, failure))
 
         if self._presence_convs:
-            # wait until all conversations are notified
+            if offline:
+                status = 'offline'
+            else:
+                status = 'online'
+                self._presence_convs = list()
+                self._presence_event.set()
+
+            self.log.info('Sending {status} presence', status=status)
+
+            # when going offline, wait until all conversations are notified
             self._presence_event.wait()
 
     def _add_intro_manager(self, connection):
@@ -729,15 +741,11 @@ class Peer(object):
     @inlineCallbacks
     def _stop_tor(self):
         if self._onion_service:
-            self._ui.notify(
-                notifications.UnmessageNotification(
-                    'Removing Onion Service from Tor'))
+            self.log.info('Removing Onion Service from Tor')
 
             yield self._onion_service.remove_from_tor(self._tor._protocol)
 
-            self._ui.notify(
-                notifications.UnmessageNotification(
-                    'Removed Onion Service from Tor'))
+            self.log.info('Removed Onion Service from Tor')
 
     def _send_request(self, identity, key):
         if ':' not in identity:
@@ -942,7 +950,10 @@ class Peer(object):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              local_mode=False):
+              local_mode=False,
+              begin_log=False,
+              begin_log_std=False,
+              log_level=None):
         self._notify_bootstrap('Starting peer')
 
         if local_mode:
@@ -950,6 +961,13 @@ class Peer(object):
             self._local_mode = local_mode
 
         self._create_peer_dir()
+
+        if begin_log:
+            if log_level is None:
+                begin_logging(self.path_log_file, begin_std=begin_log_std)
+            else:
+                begin_logging(self.path_log_file, log_level, begin_log_std)
+
         self._load_peer_info()
         self._update_config()
 
@@ -998,6 +1016,8 @@ class Peer(object):
         d.addErrback(errback)
 
     def stop(self):
+        self.log.info('Stopping peer')
+
         self._save_peer_info()
 
         self._send_presence(offline=True)
@@ -1102,6 +1122,8 @@ class Introduction(Thread):
 
         self.connection.add_manager(self)
 
+        self.log = loggerFor(self)
+
     def run(self):
         data, _ = self.queue_in_data.get()
         try:
@@ -1111,11 +1133,16 @@ class Introduction(Thread):
                 errors.InvalidIdentityError,
                 errors.InvalidPublicKeyError) as e:
             e.title += ' caused by an unknown peer'
+            self.log.error(Failure(e).getTraceback())
             self.peer._ui.notify_error(e)
             self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
+        self.log.info('Introduction data received')
+
         packet = packets.IntroductionPacket.build(data)
+
+        self.log.info('IntroductionPacket successfully built')
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
@@ -1123,6 +1150,10 @@ class Introduction(Thread):
                 a2b(packet.iv) + self.peer.identity_keys.pub +
                 keys.iv_hash_key)
             if iv_hash == a2b(packet.iv_hash):
+                self.log.debug(
+                    'Sender of the IntroductionPacket successfully '
+                    'identified: {contact.identity}', contact=conv.contact)
+
                 # the database does have a conversation between the
                 # users, so the current connection must be added to the
                 # conversation, a manager must be started and then
@@ -1132,6 +1163,8 @@ class Introduction(Thread):
                 conv.queue_in_data.put([data, self.connection])
                 break
         else:
+            self.log.info('Assuming the packet is a RequestPacket')
+
             # the database does not have a conversation between the
             # users, so a request must be created and the UI
             # notified
@@ -1142,6 +1175,10 @@ class Introduction(Thread):
             conv.set_active(self.connection, Conversation.state_in_req)
 
             contact = req.conversation.contact
+
+            self.log.debug('Sender of the RequestPacket successfully '
+                           'identified: {contact.identity}', contact=contact)
+
             self.peer._inbound_requests[contact.identity] = req
             self.peer._ui.notify_in_request(
                 notifications.ContactNotification(
@@ -1153,8 +1190,10 @@ class Introduction(Thread):
         self.peer._managers_conv.remove(self)
 
     def notify_disconnect(self):
-        self.peer._ui.notify(notifications.UnmessageNotification(
-            'An unknown peer has disconnected without sending any data'))
+        notification = notifications.UnmessageNotification(
+            'An unknown peer has disconnected without sending any data')
+        self.log.info(str(notification))
+        self.peer._ui.notify(notification)
 
 
 @attr.s
@@ -1193,6 +1232,8 @@ class Conversation(object):
     thread_in_data = attr.ib(init=False)
     thread_out_data = attr.ib(init=False)
     thread_in_packets = attr.ib(init=False)
+
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
         self.thread_in_data = Thread(target=self.check_in_data)
@@ -1258,18 +1299,24 @@ class Conversation(object):
             data, connection = self.queue_in_data.get()
             try:
                 method = getattr(self, 'handle_{}_data'.format(self.state))
-                method(data, connection)
             except AttributeError:
                 # the state does not have a "handle" method, which currently is
                 # state_in_req because it should be waiting for the request to
                 # be accepted (by the user) and meanwhile no more data should
                 # be received from the other party
                 # TODO maybe disconnect instead of ignoring the data
-                pass
+                self.log.warn('Failed to find the handle method for state: '
+                              '{state}', state=self.state)
             except (errors.MalformedPacketError,
                     errors.CorruptedPacketError) as e:
                 e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
+            else:
+                self.log.debug(
+                    'Handling data with {method.__name__} for state: {state}',
+                    method=method, state=self.state)
+
+                method(data, connection)
 
     def check_out_data(self):
         while True:
@@ -1654,6 +1701,8 @@ class FileTransfer(object):
 class ElementParser(object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
     def _parse_filereq_element(self, element, conversation, connection=None):
         join(FileSession.parse_request_element(element,
                                                conversation,
@@ -1756,6 +1805,9 @@ class ElementParser(object):
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
+            self.log.debug('Parsing element of type: {element.__class__}',
+                           element=element.to_element())
+
             # it can be parsed as all parts have been added to the
             # ``PartialElement`` or it is composed of a single part
             try:
@@ -1773,10 +1825,8 @@ class ElementParser(object):
                                              method))
                     if e.message:
                         message += ' - ' + e.message
-                    self.peer._notify_error(
-                        conversation,
-                        errors.UnmessageError(title=str(type(e)),
-                                              message=message))
+                    e.message = message
+                    self.peer._notify_error(conversation, Failure(e))
         else:
             # the ``PartialElement`` has parts yet to be
             # transmitted (sent/received)
@@ -1788,10 +1838,13 @@ class _ConversationFactory(Factory, object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
     connection_made = attr.ib(repr=False)
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
 
     def notify_error(self, error):
+        self.log.error(str(error))
         self.peer._ui.notify_error(error)
 
 
@@ -1809,24 +1862,40 @@ class _ConversationProtocol(NetstringReceiver, object):
 
     _lock_send = attr.ib(init=False, default=attr.Factory(Lock))
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
     def connectionMade(self):
+        self.log.info('Connection made')
+
         if self.connection_made:
+            self.log.info('Calling connection made callback: '
+                          '{callback.__name__}', callback=self.connection_made)
+
             self.connection_made(self)
 
     def add_manager(self, manager, type_=None):
         self.manager = manager
         self.type_ = type_ or _ConversationProtocol.type_regular
 
+        self.log.info('Adding manager of type: {manager.__class__}',
+                      manager=manager)
+
     def remove_manager(self):
+        self.log.info('Removing manager')
+
         self.manager = None
         self.transport.loseConnection()
 
     def connectionLost(self, reason):
+        self.log.info('Connection lost')
+
         if self.manager:
             # the other party disconnected cleanly without sending a presence
             # element or the connection was actually lost
             # TODO check the different reasons and act accordingly?
             # TODO consider a connection that never had a manager?
+            self.log.info('Notifying manager that the other peer disconnected')
+
             self.manager.notify_disconnect()
 
     def stringReceived(self, string):
@@ -1838,8 +1907,8 @@ class _ConversationProtocol(NetstringReceiver, object):
                 self.manager.receive_data(string)
             else:
                 self.factory.notify_error(errors.UnmessageError(
-                    title='Connection of unknown type',
-                    message=str(self.type_)))
+                    message='Connection of unknown type "{}"'.format(
+                        str(self.type_))))
         except AttributeError:
             self.factory.notify_error(
                 errors.TransportError(
