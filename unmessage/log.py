@@ -14,7 +14,14 @@ LOG_LEVEL = LogLevel.warn
 
 NAMESPACES = [
     'unmessage.__main__',
+    'unmessage.cli.Cli',
+    'unmessage.gui.Gui',
     'unmessage.peer',
+    'unmessage.peer._ConversationFactory',
+    'unmessage.peer._ConversationProtocol',
+    'unmessage.peer.Conversation',
+    'unmessage.peer.Introduction',
+    'unmessage.peer.Peer',
 ]
 
 
