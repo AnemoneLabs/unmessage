@@ -12,7 +12,7 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
-from .log import Logger, LogLevel
+from .log import loggerFor, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -44,7 +44,7 @@ class Gui(Tk.Tk, PeerUi):
                  local_mode=False):
         super(Gui, self).__init__()
 
-        self.log = Logger()
+        self.log = loggerFor(self)
 
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)

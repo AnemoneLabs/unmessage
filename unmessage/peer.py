@@ -20,7 +20,6 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
-from twisted.logger import Logger
 from twisted.protocols.basic import NetstringReceiver
 from twisted.python.failure import Failure
 from txtorcon import TorClientEndpoint
@@ -36,7 +35,7 @@ from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
 from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
-from .log import begin_logging
+from .log import begin_logging, loggerFor
 from .ui import ConversationUi, PeerUi
 from .utils import fork, join, Address
 from .utils import is_valid_identity, is_valid_file_name
@@ -104,10 +103,9 @@ class Peer(object):
 
     _state = attr.ib(init=False)
 
-    log = attr.ib(init=False)
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
-        self.log = Logger()
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._info = PeerInfo(port_local_server=PORT)
@@ -1118,6 +1116,8 @@ class Introduction(Thread):
 
         self.connection.add_manager(self)
 
+        self.log = loggerFor(self)
+
     def run(self):
         data, _ = self.queue_in_data.get()
         try:
@@ -1209,6 +1209,8 @@ class Conversation(object):
     thread_in_data = attr.ib(init=False)
     thread_out_data = attr.ib(init=False)
     thread_in_packets = attr.ib(init=False)
+
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
         self.thread_in_data = Thread(target=self.check_in_data)
@@ -1671,6 +1673,8 @@ class FileTransfer(object):
 class ElementParser(object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
     def _parse_filereq_element(self, element, conversation, connection=None):
         join(FileSession.parse_request_element(element,
                                                conversation,
@@ -1803,6 +1807,8 @@ class _ConversationFactory(Factory, object):
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
     connection_made = attr.ib(repr=False)
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
     def buildProtocol(self, addr):
         return _ConversationProtocol(self, self.connection_made)
 
@@ -1823,6 +1829,8 @@ class _ConversationProtocol(NetstringReceiver, object):
     type_ = attr.ib(init=False, default=None)
 
     _lock_send = attr.ib(init=False, default=attr.Factory(Lock))
+
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def connectionMade(self):
         if self.connection_made:

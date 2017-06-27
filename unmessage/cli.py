@@ -10,7 +10,7 @@ from pyaxo import b2a
 
 from . import errors
 from . import peer
-from .log import Logger, LogLevel
+from .log import loggerFor, LogLevel
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 
@@ -112,7 +112,7 @@ def get_auth_color(conversation):
 
 class Cli(PeerUi):
     def __init__(self):
-        self.log = Logger()
+        self.log = loggerFor(self)
 
         self.help_info = None
         self.event_stop = Event()

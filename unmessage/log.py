@@ -2,6 +2,7 @@ import io
 import logging
 
 from twisted.logger import globalLogBeginner, Logger
+from twisted.logger import _loggerFor as loggerFor
 from twisted.logger import FilteringLogObserver, ILogFilterPredicate
 from twisted.logger import LogLevelFilterPredicate, LogLevel, PredicateResult
 from twisted.logger import STDLibLogObserver, textFileLogObserver
