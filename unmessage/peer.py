@@ -1861,8 +1861,8 @@ class _ConversationProtocol(NetstringReceiver, object):
                 self.manager.receive_data(string)
             else:
                 self.factory.notify_error(errors.UnmessageError(
-                    title='Connection of unknown type',
-                    message=str(self.type_)))
+                    message='Connection of unknown type "{}"'.format(
+                        str(self.type_))))
         except AttributeError:
             self.factory.notify_error(
                 errors.TransportError(
