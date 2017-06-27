@@ -226,6 +226,8 @@ class Peer(object):
     def _notify_error(self, conv, error):
         failure = error if isinstance(error, Failure) else Failure(error)
 
+        self.log.error(failure.getTraceback())
+
         if failure.check(errors.ConnectionLostError):
             conv.ui.notify_disconnect(failure.value)
         elif failure.check(errors.OfflinePeerError):
@@ -258,6 +260,7 @@ class Peer(object):
             CONFIG.write(f)
 
     def _save_peer_info(self):
+        self.log.info('Saving peer info')
         self._persistence.save_peer_info(self._info)
 
     def _load_conversations(self):
@@ -299,9 +302,14 @@ class Peer(object):
                         lambda failure: self._notify_error(c, failure))
 
         if self._presence_convs:
-            if not offline:
+            if offline:
+                status = 'offline'
+            else:
+                status = 'online'
                 self._presence_convs = list()
                 self._presence_event.set()
+
+            self.log.info('Sending {status} presence', status=status)
 
             # when going offline, wait until all conversations are notified
             self._presence_event.wait()
@@ -733,15 +741,11 @@ class Peer(object):
     @inlineCallbacks
     def _stop_tor(self):
         if self._onion_service:
-            self._ui.notify(
-                notifications.UnmessageNotification(
-                    'Removing Onion Service from Tor'))
+            self.log.info('Removing Onion Service from Tor')
 
             yield self._onion_service.remove_from_tor(self._tor._protocol)
 
-            self._ui.notify(
-                notifications.UnmessageNotification(
-                    'Removed Onion Service from Tor'))
+            self.log.info('Removed Onion Service from Tor')
 
     def _send_request(self, identity, key):
         if ':' not in identity:
@@ -1012,6 +1016,8 @@ class Peer(object):
         d.addErrback(errback)
 
     def stop(self):
+        self.log.info('Stopping peer')
+
         self._save_peer_info()
 
         self._send_presence(offline=True)
@@ -1127,11 +1133,16 @@ class Introduction(Thread):
                 errors.InvalidIdentityError,
                 errors.InvalidPublicKeyError) as e:
             e.title += ' caused by an unknown peer'
+            self.log.error(Failure(e).getTraceback())
             self.peer._ui.notify_error(e)
             self.connection.remove_manager()
 
     def handle_introduction_data(self, data):
+        self.log.info('Introduction data received')
+
         packet = packets.IntroductionPacket.build(data)
+
+        self.log.info('IntroductionPacket successfully built')
 
         for conv in self.peer.conversations:
             keys = conv.keys or conv.request_keys
@@ -1139,6 +1150,10 @@ class Introduction(Thread):
                 a2b(packet.iv) + self.peer.identity_keys.pub +
                 keys.iv_hash_key)
             if iv_hash == a2b(packet.iv_hash):
+                self.log.debug(
+                    'Sender of the IntroductionPacket successfully '
+                    'identified: {contact.identity}', contact=conv.contact)
+
                 # the database does have a conversation between the
                 # users, so the current connection must be added to the
                 # conversation, a manager must be started and then
@@ -1148,6 +1163,8 @@ class Introduction(Thread):
                 conv.queue_in_data.put([data, self.connection])
                 break
         else:
+            self.log.info('Assuming the packet is a RequestPacket')
+
             # the database does not have a conversation between the
             # users, so a request must be created and the UI
             # notified
@@ -1158,6 +1175,10 @@ class Introduction(Thread):
             conv.set_active(self.connection, Conversation.state_in_req)
 
             contact = req.conversation.contact
+
+            self.log.debug('Sender of the RequestPacket successfully '
+                           'identified: {contact.identity}', contact=contact)
+
             self.peer._inbound_requests[contact.identity] = req
             self.peer._ui.notify_in_request(
                 notifications.ContactNotification(
@@ -1169,8 +1190,10 @@ class Introduction(Thread):
         self.peer._managers_conv.remove(self)
 
     def notify_disconnect(self):
-        self.peer._ui.notify(notifications.UnmessageNotification(
-            'An unknown peer has disconnected without sending any data'))
+        notification = notifications.UnmessageNotification(
+            'An unknown peer has disconnected without sending any data')
+        self.log.info(str(notification))
+        self.peer._ui.notify(notification)
 
 
 @attr.s
@@ -1282,12 +1305,17 @@ class Conversation(object):
                 # be accepted (by the user) and meanwhile no more data should
                 # be received from the other party
                 # TODO maybe disconnect instead of ignoring the data
-                pass
+                self.log.warn('Failed to find the handle method for state: '
+                              '{state}', state=self.state)
             except (errors.MalformedPacketError,
                     errors.CorruptedPacketError) as e:
                 e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
             else:
+                self.log.debug(
+                    'Handling data with {method.__name__} for state: {state}',
+                    method=method, state=self.state)
+
                 method(data, connection)
 
     def check_out_data(self):
@@ -1777,6 +1805,9 @@ class ElementParser(object):
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
+            self.log.debug('Parsing element of type: {element.__class__}',
+                           element=element.to_element())
+
             # it can be parsed as all parts have been added to the
             # ``PartialElement`` or it is composed of a single part
             try:
@@ -1813,6 +1844,7 @@ class _ConversationFactory(Factory, object):
         return _ConversationProtocol(self, self.connection_made)
 
     def notify_error(self, error):
+        self.log.error(str(error))
         self.peer._ui.notify_error(error)
 
 
@@ -1833,23 +1865,37 @@ class _ConversationProtocol(NetstringReceiver, object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def connectionMade(self):
+        self.log.info('Connection made')
+
         if self.connection_made:
+            self.log.info('Calling connection made callback: '
+                          '{callback.__name__}', callback=self.connection_made)
+
             self.connection_made(self)
 
     def add_manager(self, manager, type_=None):
         self.manager = manager
         self.type_ = type_ or _ConversationProtocol.type_regular
 
+        self.log.info('Adding manager of type: {manager.__class__}',
+                      manager=manager)
+
     def remove_manager(self):
+        self.log.info('Removing manager')
+
         self.manager = None
         self.transport.loseConnection()
 
     def connectionLost(self, reason):
+        self.log.info('Connection lost')
+
         if self.manager:
             # the other party disconnected cleanly without sending a presence
             # element or the connection was actually lost
             # TODO check the different reasons and act accordingly?
             # TODO consider a connection that never had a manager?
+            self.log.info('Notifying manager that the other peer disconnected')
+
             self.manager.notify_disconnect()
 
     def stringReceived(self, string):
