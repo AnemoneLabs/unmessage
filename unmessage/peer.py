@@ -1455,14 +1455,14 @@ class AuthSession(object):
     step = attr.ib(init=False)
 
     def __attrs_post_init__(self):
-        if self.buffer_:
-            # start from step 2 as the initial buffer was received from the
-            # other party, who started the session
-            self.step = 2
-        else:
+        if self.buffer_ is None:
             # start from step 1 as the initial buffer still has to be sent to
             # the other party, who will advance the session
             self.step = 1
+        else:
+            # start from step 2 as the initial buffer was received from the
+            # other party, who started the session
+            self.step = 2
 
     @property
     def is_authenticated(self):
