@@ -679,47 +679,15 @@ class Peer(object):
 
         return d
 
+    @inlineCallbacks
     def _start_tor(self, launch_tor):
-        d_tor = Deferred()
-
-        def finish(result):
-            self._notify_bootstrap('Added Onion Service to Tor')
-
-            d_tor.callback(result)
-
-        def add_onion(tor):
-            self._tor = tor
-
-            self._notify_bootstrap('Controlling Tor process')
-
-            self._notify_bootstrap('Waiting for the Onion Service')
-
-            onion_service_string = '{} {}:{}'.format(self._port_local_server,
-                                                     self._ip_local_server,
-                                                     self._port_local_server)
-            if self.onion_service_key:
-                self._onion_service = txtorcon.EphemeralHiddenService(
-                    [onion_service_string],
-                    self.onion_service_key)
-                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
-            else:
-                def save_key(result):
-                    self._onion_service_key = self._onion_service.private_key
-
-                self._onion_service = txtorcon.EphemeralHiddenService(
-                    [onion_service_string])
-                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
-                d_onion.addCallback(save_key)
-
-            d_onion.addCallback(finish)
-
         if launch_tor:
             self._notify_bootstrap('Launching Tor')
 
             def display_bootstrap_lines(prog, tag, summary):
                 self._notify_bootstrap('{}%: {}'.format(prog, summary))
 
-            d_process = txtorcon.launch(
+            self._tor = yield txtorcon.launch(
                 self._twisted_reactor,
                 progress_updates=display_bootstrap_lines,
                 data_directory=self._path_tor_data_dir,
@@ -730,12 +698,33 @@ class Peer(object):
             endpoint = TCP4ClientEndpoint(self._twisted_reactor,
                                           HOST,
                                           self._port_tor_control)
-            d_process = txtorcon.connect(self._twisted_reactor, endpoint)
+            self._tor = yield txtorcon.connect(self._twisted_reactor, endpoint)
 
-        d_process.addCallback(add_onion)
-        d_process.addErrback(d_tor.errback)
+        self._notify_bootstrap('Controlling Tor process')
 
-        return d_tor
+        onion_service_string = '{} {}:{}'.format(self._port_local_server,
+                                                 self._ip_local_server,
+                                                 self._port_local_server)
+
+        if self.onion_service_key:
+            args = ([onion_service_string], self.onion_service_key)
+            save_key = False
+        else:
+            args = ([onion_service_string],)
+            save_key = True
+
+        self._onion_service = txtorcon.EphemeralHiddenService(*args)
+
+        self._notify_bootstrap('Waiting for the Onion Service')
+
+        yield self._onion_service.add_to_tor(self._tor._protocol)
+
+        if save_key:
+            self._onion_service_key = self._onion_service.private_key
+
+        self._notify_bootstrap('Added Onion Service to Tor')
+
+        returnValue(None)
 
     @inlineCallbacks
     def _stop_tor(self):
