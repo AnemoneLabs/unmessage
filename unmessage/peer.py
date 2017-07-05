@@ -735,6 +735,7 @@ class Peer(object):
 
             self.log.info('Removed Onion Service from Tor')
 
+    @inlineCallbacks
     def _send_request(self, identity, key):
         if ':' not in identity:
             identity += ':' + str(PORT)
@@ -747,8 +748,35 @@ class Peer(object):
         else:
             req = self._create_request(contact)
 
-            def connection_made(connection):
-                def request_sent(result):
+            try:
+                connection = yield self._connect(contact.address)
+            except Exception as e:
+                failure = Failure(e)
+                if failure.check(txtorcon.socks.HostUnreachableError,
+                                 txtorcon.socks.TtlExpiredError):
+                    self._ui.notify_error(errors.OfflinePeerError(
+                        title=str(e),
+                        contact=contact.name,
+                        is_request=True))
+                else:
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request connection failed',
+                        message=str(e)))
+            else:
+                conv = req.conversation
+                conv.start()
+                conv.set_active(connection, Conversation.state_out_req)
+
+                data = str(req.packet)
+
+                try:
+                    yield conv.send_data(data)
+                except Exception as e:
+                    # TODO handle expected errors and display better messages
+                    self._ui.notify_error(errors.UnmessageError(
+                        title='Request packet failed',
+                        message=str(e)))
+                else:
                     self._outbound_requests[contact.identity] = req
                     self._ui.notify_out_request(
                         notifications.ContactNotification(
@@ -756,36 +784,6 @@ class Peer(object):
                             title='Request sent',
                             message='{} has received your request'.format(
                                 identity)))
-
-                def request_failed(failure):
-                    # TODO handle expected errors and display better messages
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request packet failed',
-                        message=str(failure)))
-
-                conv = req.conversation
-                conv.start()
-                conv.set_active(connection, Conversation.state_out_req)
-
-                # pack the ``RequestPacket`` into a ``str`` and send it to the
-                # other peer
-                d_send_data = conv.send_data(str(req.packet))
-                d_send_data.addCallbacks(request_sent, request_failed)
-
-            def connection_failed(failure):
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    self._ui.notify_error(errors.OfflinePeerError(
-                        title=failure.getErrorMessage(),
-                        contact=contact.name,
-                        is_request=True))
-                else:
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request connection failed',
-                        message=str(failure)))
-
-            d_connect = self._connect(contact.address)
-            d_connect.addCallbacks(connection_made, connection_failed)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
