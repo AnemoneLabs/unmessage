@@ -7,6 +7,7 @@ from functools import wraps
 from threading import Event, RLock
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks
 
 from . import errors
 from . import peer
@@ -292,11 +293,21 @@ class Cli(PeerUi):
             b2a(self.peer.identity_keys.pub)))
         self.peer.copy_peer()
 
+    @inlineCallbacks
     def send_request(self, identity, key):
         try:
-            self.peer.send_request(identity, key)
-        except errors.InvalidPublicKeyError as e:
-            self.display_attention(e.message, e.title, error=True)
+            notification = yield self.peer.send_request(identity, key)
+        except errors.UnmessageError as e:
+            self.display_attention(message=str(e),
+                                   title=e.title,
+                                   error=True)
+        except Exception as e:
+            self.display_attention(message=str(e),
+                                   title=str(type(e)),
+                                   error=True)
+        else:
+            self.display_info(notification.message,
+                              notification.title)
 
     def notify_in_request(self, notification):
         cmd = '/req-accept'
@@ -305,10 +316,6 @@ class Cli(PeerUi):
                 cmd,
                 notification.contact.identity),
             notification.title)
-
-    def notify_out_request(self, notification):
-        self.display_info(notification.message,
-                          notification.title)
 
     def notify_conv_established(self, notification):
         conv = notification.conversation

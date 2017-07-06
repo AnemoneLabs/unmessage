@@ -45,8 +45,5 @@ class PeerUi(_Ui):
     def notify_in_request(self, notification):
         pass
 
-    def notify_out_request(self, notification):
-        pass
-
     def notify_conv_established(self, notification):
         pass

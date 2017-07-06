@@ -9,6 +9,7 @@ from tkMessageBox import askyesno, showerror, showinfo
 from tkSimpleDialog import askstring
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks
 
 from . import errors
 from . import peer
@@ -166,11 +167,16 @@ class Gui(Tk.Tk, PeerUi):
     def notify_peer_failed(self, notification):
         showerror(notification.title, notification.message)
 
+    @inlineCallbacks
     def send_request(self, identity, key):
         try:
-            self.peer.send_request(identity, key)
-        except errors.InvalidPublicKeyError as e:
-            showerror(e.title, e.message)
+            notification = yield self.peer.send_request(identity, key)
+        except errors.UnmessageError as e:
+            showerror(e.title, str(e))
+        except Exception as e:
+            showerror(str(type(e)), str(e))
+        else:
+            showinfo(notification.title, notification.message)
 
     @threadsafe
     def notify_conv_established(self, notification):
@@ -198,10 +204,6 @@ class Gui(Tk.Tk, PeerUi):
                                  peer=self.peer,
                                  contact=notification.contact)
         self.wait_window(w)
-
-    @threadsafe
-    def notify_out_request(self, notification):
-        pass
 
     def copy_identity(self):
         self.peer.copy_identity()

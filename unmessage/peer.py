@@ -739,51 +739,33 @@ class Peer(object):
     def _send_request(self, identity, key):
         if ':' not in identity:
             identity += ':' + str(PORT)
+        contact = Contact(identity, key)
+        req = self._create_request(contact)
 
         try:
-            contact = Contact(identity, key)
-        except (errors.InvalidIdentityError,
-                errors.InvalidPublicKeyError) as e:
-            self._ui.notify_error(e)
-        else:
-            req = self._create_request(contact)
-
-            try:
-                connection = yield self._connect(contact.address)
-            except Exception as e:
-                failure = Failure(e)
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    self._ui.notify_error(errors.OfflinePeerError(
-                        title=str(e),
-                        contact=contact.name,
-                        is_request=True))
-                else:
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request connection failed',
-                        message=str(e)))
+            connection = yield self._connect(contact.address)
+        except Exception as e:
+            if Failure(e).check(txtorcon.socks.HostUnreachableError,
+                                txtorcon.socks.TtlExpiredError):
+                raise errors.OfflinePeerError(title=str(e),
+                                              contact=contact.name,
+                                              is_request=True)
             else:
-                conv = req.conversation
-                conv.start()
-                conv.set_active(connection, Conversation.state_out_req)
+                raise
+        else:
+            conv = req.conversation
+            conv.start()
+            conv.set_active(connection, Conversation.state_out_req)
 
-                data = str(req.packet)
+            yield conv.send_data(str(req.packet))
 
-                try:
-                    yield conv.send_data(data)
-                except Exception as e:
-                    # TODO handle expected errors and display better messages
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request packet failed',
-                        message=str(e)))
-                else:
-                    self._outbound_requests[contact.identity] = req
-                    self._ui.notify_out_request(
-                        notifications.ContactNotification(
-                            contact,
-                            title='Request sent',
-                            message='{} has received your request'.format(
-                                identity)))
+            self._outbound_requests[contact.identity] = req
+
+            notification = notifications.ContactNotification(
+                contact,
+                title='Request sent',
+                message='{} has received your request'.format(identity))
+            returnValue(notification)
 
     def _accept_request(self, request, new_name):
         conv = request.conversation
@@ -1019,15 +1001,15 @@ class Peer(object):
 
         self._state = Peer.state_stopped
 
+    @inlineCallbacks
     def send_request(self, identity, key):
         try:
             key_bytes = a2b(key)
         except TypeError:
             raise errors.InvalidPublicKeyError()
         else:
-            t = Thread(target=self._send_request, args=(identity, key_bytes,))
-            t.daemon = True
-            t.start()
+            notification = yield self._send_request(identity, key_bytes)
+            returnValue(notification)
 
     def accept_request(self, identity, new_name=None):
         request = self._inbound_requests.pop(identity)
