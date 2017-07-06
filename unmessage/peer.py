@@ -438,11 +438,11 @@ class Peer(object):
 
         self._contacts[conv.contact.name] = conv.contact
         self._conversations[conv.contact.name] = conv
-        self._ui.notify_conv_established(
-            notifications.ConversationNotification(
-                conv,
-                title='Conversation established',
-                message='You can now chat with {}'.format(conv.contact.name)))
+
+        return notifications.ConversationNotification(
+            conv,
+            title='Conversation established',
+            message='You can now chat with {}'.format(conv.contact.name))
 
     def _delete_conversation(self, conversation):
         conversation.close()
@@ -779,7 +779,7 @@ class Peer(object):
                 raise errors.InvalidNameError()
 
         handshake_keys = pyaxo.generate_keypair()
-        self._init_conv(
+        notification = self._init_conv(
             conv,
             priv_handshake_key=handshake_keys.priv,
             other_handshake_key=a2b(
@@ -787,6 +787,8 @@ class Peer(object):
             other_ratchet_key=a2b(
                 request.packet.handshake_packet.ratchet_key),
             mode=True)
+
+        self._ui.notify_conv_established(notification)
 
         d = self._send_element(conv,
                                RequestElement(RequestElement.request_accepted),
@@ -1333,11 +1335,12 @@ class Conversation(object):
                 e.message += ' - decryption failed'
                 raise e
 
-            self.peer._init_conv(
+            notification = self.peer._init_conv(
                 self,
                 priv_handshake_key=req.handshake_keys.priv,
                 other_handshake_key=handshake_key,
                 ratchet_keys=req.ratchet_keys)
+            self.peer._ui.notify_conv_established(notification)
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
