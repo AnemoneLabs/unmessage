@@ -9,13 +9,15 @@ from tkMessageBox import askyesno, showerror, showinfo
 from tkSimpleDialog import askstring
 
 from pyaxo import b2a
-from twisted.internet.defer import inlineCallbacks
 
 from . import errors
 from . import peer
 from .log import loggerFor, LogLevel
+from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
+from .ui import displays_error as _displays_error
+from .ui import displays_result as _displays_result
 
 
 def threadsafe(f):
@@ -33,6 +35,24 @@ def write_on_text(text, content, clear=True):
     for c in content:
         text.insert(Tk.INSERT, c)
     text.config(state=state)
+
+
+def displays_error(f):
+    def display(self, error):
+        self.display_error(message=str(error),
+                           title=error.title)
+    return _displays_error(f, display)
+
+
+def displays_result(f):
+    def display(self, result):
+        if isinstance(result, UnmessageNotification):
+            title = result.title
+        else:
+            title = None
+        self.display_info(message=str(result),
+                          title=title)
+    return _displays_result(f, display)
 
 
 class Gui(Tk.Tk, PeerUi):
@@ -175,16 +195,10 @@ class Gui(Tk.Tk, PeerUi):
     def notify_peer_failed(self, notification):
         self.display_error(notification.message, notification.title)
 
-    @inlineCallbacks
+    @displays_error
+    @displays_result
     def send_request(self, identity, key):
-        try:
-            notification = yield self.peer.send_request(identity, key)
-        except errors.UnmessageError as e:
-            showerror(e.title, str(e))
-        except Exception as e:
-            showerror(str(type(e)), str(e))
-        else:
-            showinfo(notification.title, notification.message)
+        return self.peer.send_request(identity, key)
 
     @threadsafe
     def notify_conv_established(self, notification):

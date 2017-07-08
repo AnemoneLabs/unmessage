@@ -7,13 +7,15 @@ from functools import wraps
 from threading import Event, RLock
 
 from pyaxo import b2a
-from twisted.internet.defer import inlineCallbacks
 
 from . import errors
 from . import peer
 from .log import loggerFor, LogLevel
+from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
+from .ui import displays_error as _displays_error
+from .ui import displays_result as _displays_result
 
 
 DEFAULT_PREFIX = '>'
@@ -109,6 +111,25 @@ def get_auth_color(conversation):
         return CursesHelper.get_color_pair(GREEN)
     else:
         return CursesHelper.get_color_pair(RED)
+
+
+def displays_error(f):
+    def display(self, error):
+        self.display_attention(message=str(error),
+                               title=error.title,
+                               error=True)
+    return _displays_error(f, display)
+
+
+def displays_result(f):
+    def display(self, result):
+        if isinstance(result, UnmessageNotification):
+            title = result.title
+        else:
+            title = None
+        self.display_info(message=str(result),
+                          title=title)
+    return _displays_result(f, display)
 
 
 class Cli(PeerUi):
@@ -293,21 +314,10 @@ class Cli(PeerUi):
             b2a(self.peer.identity_keys.pub)))
         self.peer.copy_peer()
 
-    @inlineCallbacks
+    @displays_error
+    @displays_result
     def send_request(self, identity, key):
-        try:
-            notification = yield self.peer.send_request(identity, key)
-        except errors.UnmessageError as e:
-            self.display_attention(message=str(e),
-                                   title=e.title,
-                                   error=True)
-        except Exception as e:
-            self.display_attention(message=str(e),
-                                   title=str(type(e)),
-                                   error=True)
-        else:
-            self.display_info(notification.message,
-                              notification.title)
+        return self.peer.send_request(identity, key)
 
     def notify_in_request(self, notification):
         cmd = '/req-accept'

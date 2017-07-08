@@ -1,3 +1,10 @@
+from functools import wraps
+
+from twisted.internet.defer import Deferred
+
+from . import errors
+
+
 class _Ui(object):
     def notify(self, notification):
         pass
@@ -47,3 +54,44 @@ class PeerUi(_Ui):
 
     def notify_conv_established(self, notification):
         pass
+
+
+def displays_error(f, display):
+    @wraps(f)
+    def wrapped_f(self, *args, **kwargs):
+        try:
+            result = f(self, *args, **kwargs)
+        except Exception as e:
+            display(self, errors.to_unmessage_error(e))
+        else:
+            if isinstance(result, Deferred):
+                value = Deferred()
+                result.addErrback(
+                    lambda failure: display(
+                        self,
+                        errors.to_unmessage_error(failure)))
+                result.addCallbacks(value.callback, value.errback)
+            else:
+                value = result
+            return value
+    return wrapped_f
+
+
+def displays_result(f, display):
+    @wraps(f)
+    def wrapped_f(self, *args, **kwargs):
+        def _display(r):
+            if r is not None:
+                display(self, r)
+            return r
+
+        result = f(self, *args, **kwargs)
+        if isinstance(result, Deferred):
+            value = Deferred()
+            result.addCallback(_display)
+            result.addCallbacks(value.callback, value.errback)
+        else:
+            _display(result)
+            value = result
+        return value
+    return wrapped_f
