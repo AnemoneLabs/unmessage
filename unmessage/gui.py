@@ -127,8 +127,16 @@ class Gui(Tk.Tk, PeerUi):
                         log_level=LogLevel.debug)
 
     @threadsafe
+    def display_info(self, message, title=None):
+        showinfo(title or 'Information', message)
+
+    @threadsafe
+    def display_error(self, message, title=None):
+        showerror(title or 'Error', message)
+
+    @threadsafe
     def notify_error(self, error):
-        showerror(error.title, error.message)
+        self.display_error(error.message, error.title)
 
     @threadsafe
     def notify_bootstrap(self, notification):
@@ -165,7 +173,7 @@ class Gui(Tk.Tk, PeerUi):
 
     @threadsafe
     def notify_peer_failed(self, notification):
-        showerror(notification.title, notification.message)
+        self.display_error(notification.message, notification.title)
 
     @inlineCallbacks
     def send_request(self, identity, key):
@@ -361,6 +369,12 @@ class ChatTab(Tk.Frame, ConversationUi, object):
                       content=[content + '\n'],
                       clear=False)
 
+    def display_info(self, message, title=None):
+        self.gui.display_info(message, title)
+
+    def display_error(self, message, title=None):
+        self.gui.display_error(message, title)
+
     def send_message(self, message):
         if len(message):
             self.peer.send_message(self.conversation.contact.name, message)
@@ -384,11 +398,11 @@ class ChatTab(Tk.Frame, ConversationUi, object):
             try:
                 self.peer.verify_contact(self.conversation.contact.name, key)
             except errors.VerificationError as e:
-                showerror(e.title, e.message)
+                self.display_error(e.message, e.title)
             else:
-                showinfo(title='Verification',
-                         message="{}'s key has been verified.".format(
-                             self.conversation.contact.name))
+                self.display_info(title='Verification',
+                                  message="{}'s key has been verified.".format(
+                                      self.conversation.contact.name))
             self.update_frame()
 
     def authenticate(self):
@@ -503,7 +517,7 @@ class PeerCreationTab(Tk.Frame, object):
                                tor_socks_port=tor_socks_port,
                                tor_control_port=tor_control_port)
         except errors.InvalidNameError as e:
-            showerror(e.title, e.message)
+            self.gui.display_error(e.message, e.title)
         else:
             self.destroy()
 
