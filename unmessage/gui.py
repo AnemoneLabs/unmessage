@@ -200,6 +200,9 @@ class Gui(Tk.Tk, PeerUi):
     def send_request(self, identity, key):
         return self.peer.send_request(identity, key)
 
+    def accept_request(self, identity, new_name):
+        self.peer.accept_request(identity, new_name)
+
     @threadsafe
     def notify_conv_established(self, notification):
         self.add_conversation(notification.conversation)
@@ -603,8 +606,8 @@ class InboundRequestWindow(RequestWindow):
         super(InboundRequestWindow, self).__init__(gui, peer, contact)
 
     def send_or_accept(self):
-        new_name = self.entry_name.get().strip()
-        self.peer.accept_request(self.contact.identity, new_name)
+        self.gui.accept_request(identity=self.contact.identity,
+                                new_name=self.entry_name.get().strip())
         self.destroy()
 
 
