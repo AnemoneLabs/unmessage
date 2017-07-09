@@ -214,6 +214,7 @@ class Gui(Tk.Tk, PeerUi):
         self.add_conversation(notification.conversation)
         return notification
 
+    @threadsafe
     def add_conversation(self, conversation):
         new_tab = ChatTab(parent=self.notebook,
                           gui=self,
