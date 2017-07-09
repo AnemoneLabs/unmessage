@@ -767,6 +767,7 @@ class Peer(object):
                 message='{} has received your request'.format(identity))
             returnValue(notification)
 
+    @inlineCallbacks
     def _accept_request(self, request, new_name):
         conv = request.conversation
 
@@ -788,13 +789,11 @@ class Peer(object):
                 request.packet.handshake_packet.ratchet_key),
             mode=True)
 
-        self._ui.notify_conv_established(notification)
-
-        d = self._send_element(conv,
-                               RequestElement(RequestElement.request_accepted),
-                               handshake_key=handshake_keys.pub)
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conv, failure))
+        yield self._send_element(
+            conv,
+            RequestElement(RequestElement.request_accepted),
+            handshake_key=handshake_keys.pub)
+        returnValue(notification)
 
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
@@ -1013,19 +1012,12 @@ class Peer(object):
             notification = yield self._send_request(identity, key_bytes)
             returnValue(notification)
 
+    @inlineCallbacks
     def accept_request(self, identity, new_name=None):
-        request = self._inbound_requests.pop(identity)
-
-        def _accept_request():
-            try:
-                self._accept_request(request, new_name)
-            except errors.InvalidNameError as e:
-                self._inbound_requests[identity] = request
-                self._ui.notify_error(e)
-
-        t = Thread(target=_accept_request)
-        t.daemon = True
-        t.start()
+        request = self._inbound_requests[identity]
+        notification = yield self._accept_request(request, new_name)
+        del self._inbound_requests[identity]
+        returnValue(notification)
 
     def delete_conversation(self, name):
         self._delete_conversation(self.get_conversation(name))

@@ -7,6 +7,7 @@ from functools import wraps
 from threading import Event, RLock
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
 from . import peer
@@ -334,18 +335,18 @@ class Cli(PeerUi):
                 notification.contact.identity),
             notification.title)
 
+    @displays_result
     def notify_conv_established(self, notification):
-        conv = notification.conversation
-        cmd = '/msg'
-        self.display_info('{} using "{} {} <message>"'.format(
-                notification.message,
-                cmd,
-                conv.contact.name),
-            notification.title)
-        self.add_conv_handler(conv)
+        self.add_conv_handler(notification.conversation)
+        return Cli.get_conv_established_notification(notification)
 
+    @displays_error
+    @displays_result
+    @inlineCallbacks
     def accept_request(self, identity, new_name=None):
-        self.peer.accept_request(identity, new_name)
+        notification = yield self.peer.accept_request(identity, new_name)
+        self.add_conv_handler(notification.conversation)
+        returnValue(Cli.get_conv_established_notification(notification))
 
     def display_in_reqs(self):
         if self.peer.inbound_requests:

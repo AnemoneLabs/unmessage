@@ -9,6 +9,7 @@ from tkMessageBox import askyesno, showerror, showinfo
 from tkSimpleDialog import askstring
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
 from . import peer
@@ -200,12 +201,18 @@ class Gui(Tk.Tk, PeerUi):
     def send_request(self, identity, key):
         return self.peer.send_request(identity, key)
 
+    @displays_error
+    @displays_result
+    @inlineCallbacks
     def accept_request(self, identity, new_name):
-        self.peer.accept_request(identity, new_name)
+        notification = yield self.peer.accept_request(identity, new_name)
+        self.add_conversation(notification.conversation)
+        returnValue(notification)
 
-    @threadsafe
+    @displays_result
     def notify_conv_established(self, notification):
         self.add_conversation(notification.conversation)
+        return notification
 
     def add_conversation(self, conversation):
         new_tab = ChatTab(parent=self.notebook,
