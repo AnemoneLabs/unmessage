@@ -133,6 +133,13 @@ def displays_result(f):
 
 
 class Cli(PeerUi):
+    @classmethod
+    def get_conv_established_notification(cls, notification):
+        cmd = '/msg'
+        params = notification.conversation.contact.name + ' <message>'
+        notification.message += ' using "{} {}"'.format(cmd, params)
+        return notification
+
     def __init__(self):
         self.log = loggerFor(self)
 
