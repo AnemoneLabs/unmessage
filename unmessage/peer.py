@@ -329,7 +329,8 @@ class Peer(object):
 
         else:
             point = TorClientEndpoint(address.host, address.port,
-                                      socks_hostname=HOST)
+                                      socks_hostname=HOST,
+                                      socks_port=self._port_tor_socks)
 
         def connect_from_thread():
             d_conn_proto = connectProtocol(
