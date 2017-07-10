@@ -688,6 +688,12 @@ class _ConversationHandler(ConversationUi):
         self.conversation = conversation
         self.cli = cli
 
+    def display_message(self, message, is_receiving):
+        peer = self.conversation.contact.name
+        suffix = RECEIVING_SUFFIX if is_receiving else SENDING_SUFFIX
+        self.cli.display_args_list([[peer, get_auth_color(self.conversation)],
+                                    [suffix + ' ' + message + '\n']])
+
     def update_prefix(self):
         # check if the converstation is active in the UI
         if self.conversation == self.cli.active_conv:
@@ -712,19 +718,10 @@ class _ConversationHandler(ConversationUi):
         self.cli.display_info(notification.message, success=True)
 
     def notify_message(self, notification):
-        element = notification.element
-        remote = False
-        if element.sender == self.cli.peer.name:
-            peer = element.receiver
-            suffix = SENDING_SUFFIX
-        else:
-            peer = element.sender
-            suffix = RECEIVING_SUFFIX
-            remote = self.cli.remote_mode
+        is_receiving = notification.element.receiver == self.cli.peer.name
+        remote = self.cli.remote_mode if is_receiving else False
 
-        self.cli.display_args_list([
-            [peer, get_auth_color(self.conversation)],
-            [suffix + ' ' + notification.message + '\n']])
+        self.display_message(notification.message, is_receiving)
 
         if remote:
             msg = notification.message.strip()
