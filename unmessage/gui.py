@@ -402,9 +402,7 @@ class ChatTab(Tk.Frame, ConversationUi, object):
 
     @threadsafe
     def display_message(self, message, sender):
-        self.write_on_text(content=''.join([sender,
-                                            ': ',
-                                            message]))
+        self.write_on_text(content='{}: {}'.format(sender, message))
 
         # scroll to the bottom
         self.text_conversation.yview('moveto', 1.0)
