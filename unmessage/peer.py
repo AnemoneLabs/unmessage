@@ -1207,6 +1207,11 @@ class Conversation(object):
         self.thread_in_packets = Thread(target=self.check_in_packets)
         self.thread_in_packets.daemon = True
 
+    @classmethod
+    def parse_message_element(cls, element, conversation):
+        conversation.ui.notify_message(
+            notifications.ElementNotification(element))
+
     def start(self):
         self.thread_in_data.start()
         self.thread_out_data.start()
@@ -1720,8 +1725,7 @@ class ElementParser(object):
                         '{} is offline'.format(conversation.contact.name)))
 
     def _parse_msg_element(self, element, conversation, connection=None):
-        conversation.ui.notify_message(
-            notifications.ElementNotification(element))
+        Conversation.parse_message_element(element, conversation)
 
     def _parse_auth_element(self, element, conversation, connection=None):
         if element.sender == self.peer.name:
