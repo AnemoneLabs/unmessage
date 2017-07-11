@@ -400,6 +400,15 @@ class ChatTab(Tk.Frame, ConversationUi, object):
     def display_error(self, message, title=None):
         self.gui.display_error(message, title)
 
+    @threadsafe
+    def display_message(self, message, sender):
+        self.write_on_text(content=''.join([sender,
+                                            ': ',
+                                            message]))
+
+        # scroll to the bottom
+        self.text_conversation.yview('moveto', 1.0)
+
     def send_message(self, message):
         if len(message):
             self.peer.send_message(self.conversation.contact.name, message)
@@ -455,14 +464,8 @@ class ChatTab(Tk.Frame, ConversationUi, object):
         self.update_frame()
         self.write_on_text(notification.message)
 
-    @threadsafe
     def notify_message(self, notification):
-        self.write_on_text(content=''.join([notification.element.sender,
-                                            ': ',
-                                            notification.message]))
-
-        # scroll to the bottom
-        self.text_conversation.yview('moveto', 1.0)
+        self.display_message(notification.message, notification.element.sender)
 
     @threadsafe
     def notify_finished_authentication(self, notification):
