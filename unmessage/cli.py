@@ -380,15 +380,15 @@ class Cli(PeerUi):
             self.display_info(
                 'Conversation with {} has been deleted'.format(name))
 
+    @displays_error
+    @inlineCallbacks
     def send_message(self, name, message):
         if len(message):
-            try:
-                conv = self.peer.get_conversation(name)
-            except errors.UnknownContactError as e:
-                self.display_attention(e.message)
-            else:
-                self.active_conv = conv
-                self.peer.send_message(name, message)
+            conv = self.peer.get_conversation(name)
+            self.active_conv = conv
+            yield self.peer.send_message(name, message)
+            handler = self._handlers_conv[name]
+            handler.display_message(message, is_receiving=False)
 
     def send_file(self, name, file_path):
         def file_sent(result):

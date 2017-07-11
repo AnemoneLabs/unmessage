@@ -407,10 +407,14 @@ class ChatTab(Tk.Frame, ConversationUi, object):
         # scroll to the bottom
         self.text_conversation.yview('moveto', 1.0)
 
+    @displays_error
+    @inlineCallbacks
     def send_message(self, message):
         if len(message):
-            self.peer.send_message(self.conversation.contact.name, message)
             self.text_message.delete(1.0, Tk.END)
+            yield self.peer.send_message(self.conversation.contact.name,
+                                         message)
+            self.display_message(message, self.peer.name)
 
     def set_presence(self, enable):
         self.peer.set_presence(self.conversation.contact.name, enable)

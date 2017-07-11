@@ -837,11 +837,12 @@ class Peer(object):
                 continue
         return True
 
+    @inlineCallbacks
     def _send_message(self, conversation, plaintext):
-        d = self._send_element(conversation, MessageElement(plaintext))
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conversation,
-                                                          failure))
+        element = MessageElement(plaintext)
+        yield self._send_element(conversation, element)
+        notification = notifications.ElementNotification(element)
+        returnValue(notification)
 
     @inlineCallbacks
     def _send_file(self, conversation, file_path):
@@ -1045,11 +1046,11 @@ class Peer(object):
         t.daemon = True
         t.start()
 
+    @inlineCallbacks
     def send_message(self, name, plaintext):
-        t = Thread(target=self._send_message,
-                   args=(self.get_conversation(name), plaintext,))
-        t.daemon = True
-        t.start()
+        notification = yield self._send_message(self.get_conversation(name),
+                                                plaintext)
+        returnValue(notification)
 
     @inlineCallbacks
     def send_file(self, name, file_path):
