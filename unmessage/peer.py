@@ -870,6 +870,7 @@ class Peer(object):
         else:
             raise errors.InactiveManagerError(conversation.contact.name)
 
+    @inlineCallbacks
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
         if not auth_session or auth_session.is_waiting or \
@@ -877,13 +878,16 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        d = self._send_element(
+        yield self._send_element(
             conversation,
             AuthenticationElement(auth_session.start(
                 conversation.keys.auth_secret_key + secret)))
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conversation,
-                                                          failure))
+        if conversation.auth_session.is_waiting:
+            notification = notifications.UnmessageNotification(
+                title='Authentication started',
+                message='Waiting for {} to advance'.format(
+                    conversation.contact.name))
+            returnValue(notification)
 
     def get_contact(self, name):
         return self.get_conversation(name).contact
@@ -1068,10 +1072,7 @@ class Peer(object):
         self._save_file(self.get_conversation(name), checksum, file_path)
 
     def authenticate(self, name, secret):
-        t = Thread(target=self._authenticate,
-                   args=(self.get_conversation(name), secret,))
-        t.daemon = True
-        t.start()
+        return self._authenticate(self.get_conversation(name), secret)
 
 
 class Introduction(Thread):

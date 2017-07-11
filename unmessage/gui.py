@@ -441,13 +441,16 @@ class ChatTab(Tk.Frame, ConversationUi, object):
                                       self.conversation.contact.name))
             self.update_frame()
 
+    @displays_error
+    @displays_result
     def authenticate(self):
         secret = askstring(title='Authentication',
                            prompt='Provide the shared secret:',
                            parent=self,
                            show='*')
         if secret:
-            self.peer.authenticate(self.conversation.contact.name, secret)
+            return self.peer.authenticate(self.conversation.contact.name,
+                                          secret)
 
     @threadsafe
     def notify_disconnect(self, notification):

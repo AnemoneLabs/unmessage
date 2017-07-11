@@ -475,11 +475,10 @@ class Cli(PeerUi):
                     'started' if enable else 'stopped', name),
                 success=True)
 
+    @displays_error
+    @displays_result
     def authenticate(self, name, secret):
-        try:
-            self.peer.authenticate(name, secret=secret)
-        except errors.UnknownContactError as e:
-            self.display_attention(e.message)
+        return self.peer.authenticate(name, secret=secret)
 
     def start_main(self, stdscr,
                    name,
