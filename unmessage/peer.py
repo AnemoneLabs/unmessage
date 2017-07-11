@@ -1436,6 +1436,40 @@ class AuthSession(object):
             # other party, who started the session
             self.step = 2
 
+    @classmethod
+    @inlineCallbacks
+    def parse_auth_element(cls, element, conversation):
+        buffer_ = str(element)
+        try:
+            next_buffer = conversation.auth_session.advance(buffer_)
+        except AttributeError:
+            conversation.init_auth(buffer_)
+            conversation.ui.notify_in_authentication(
+                notifications.UnmessageNotification(
+                    title='Authentication started',
+                    message='{} wishes to authenticate '.format(
+                        conversation.contact.name)))
+        else:
+            if next_buffer:
+                yield conversation.peer._send_element(
+                    conversation,
+                    AuthenticationElement(next_buffer))
+            if conversation.is_authenticated is None:
+                # the authentication is not complete as buffers are still being
+                # exchanged
+                pass
+            else:
+                if conversation.is_authenticated:
+                    title = 'Authentication successful'
+                    message = 'Your conversation with {} is authenticated!'
+                else:
+                    title = 'Authentication failed'
+                    message = 'Your conversation with {} is NOT authenticated!'
+                conversation.ui.notify_finished_authentication(
+                    notifications.UnmessageNotification(
+                        title=title,
+                        message=message.format(conversation.contact.name)))
+
     @property
     def is_authenticated(self):
         if self.step > 5:
@@ -1729,49 +1763,7 @@ class ElementParser(object):
         Conversation.parse_message_element(element, conversation)
 
     def _parse_auth_element(self, element, conversation, connection=None):
-        if element.sender == self.peer.name:
-            if conversation.auth_session.is_waiting:
-                conversation.ui.notify_out_authentication(
-                    notifications.UnmessageNotification(
-                        title='Authentication started',
-                        message='Waiting for {} to advance'.format(
-                            conversation.contact.name)))
-        else:
-            buffer_ = str(element)
-            try:
-                next_buffer = conversation.auth_session.advance(buffer_)
-            except AttributeError:
-                conversation.init_auth(buffer_)
-                conversation.ui.notify_in_authentication(
-                    notifications.UnmessageNotification(
-                        title='Authentication started',
-                        message='{} wishes to authenticate '.format(
-                                    conversation.contact.name)))
-            else:
-                if next_buffer:
-                    d = self.peer._send_element(
-                        conversation,
-                        AuthenticationElement(next_buffer))
-                    d.addCallbacks(
-                        lambda args: self.peer._element_parser.parse(*args),
-                        lambda failure: self.peer._notify_error(conversation,
-                                                                failure))
-            if conversation.is_authenticated is None:
-                # the authentication is not complete as buffers are still being
-                # exchanged
-                pass
-            else:
-                if conversation.is_authenticated:
-                    title = 'Authentication successful'
-                    message = 'Your conversation with {} is authenticated!'
-                else:
-                    title = 'Authentication failed'
-                    message = 'Your conversation with {} is NOT authenticated!'
-                conversation.ui.notify_finished_authentication(
-                    notifications.UnmessageNotification(
-                        title=title,
-                        message=message.format(
-                            conversation.contact.name)))
+        join(AuthSession.parse_auth_element(element, conversation))
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
