@@ -16,7 +16,8 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
+from twisted.internet.defer import Deferred, DeferredList
+from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
@@ -279,40 +280,38 @@ class Peer(object):
                 axolotl=axolotl)
         return convs
 
+    def _send_online_presence(self):
+        for d in self._send_presence():
+            d.addCallback(
+                lambda (_, conversation): conversation.ui.notify_online(
+                    notifications.UnmessageNotification(
+                        '{} is online'.format(conversation.contact.name))))
+            # ignore failures
+            d.addErrback(lambda _: None)
+
+    def _send_offline_presence(self):
+        # wait until all conversations are notified
+        return DeferredList(self._send_presence(offline=True),
+                            consumeErrors=True)
+
     def _send_presence(self, offline=False):
-        # TODO use a DeferredList
-        self._presence_convs = list()
-        self._presence_event = Event()
+        if offline:
+            status = PresenceElement.status_offline
+        else:
+            status = PresenceElement.status_online
+        deferreds = list()
 
         for c in self.conversations:
             if c.contact.has_presence:
-                if offline and c.is_active:
-                    self._presence_convs.append(c.contact.name)
-                    d = self._send_element(
-                        c, PresenceElement(PresenceElement.status_offline))
-                    d.addCallbacks(
-                        lambda args: self._element_parser.parse(*args),
-                        lambda failure: self._notify_error(c, failure))
-                elif not offline and not c.is_active:
-                    self._presence_convs.append(c.contact.name)
-                    d = self._send_element(
-                        c, PresenceElement(PresenceElement.status_online))
-                    d.addCallbacks(
-                        lambda args: self._element_parser.parse(*args),
-                        lambda failure: self._notify_error(c, failure))
+                if (offline and c.is_active or
+                        not offline and not c.is_active):
+                    d = self._send_element(c, PresenceElement(status))
+                    deferreds.append(d)
 
-        if self._presence_convs:
-            if offline:
-                status = 'offline'
-            else:
-                status = 'online'
-                self._presence_convs = list()
-                self._presence_event.set()
-
+        if deferreds:
             self.log.info('Sending {status} presence', status=status)
 
-            # when going offline, wait until all conversations are notified
-            self._presence_event.wait()
+        return deferreds
 
     def _add_intro_manager(self, connection):
         manager = Introduction(self, connection)
@@ -483,16 +482,15 @@ class Peer(object):
         connection.
         """
         def connection_failed(failure):
-            if element.type_ != PresenceElement.type_:
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    raise Failure(errors.OfflinePeerError(
-                        title=failure.getErrorMessage(),
-                        contact=conversation.contact.name))
-                else:
-                    raise Failure(errors.UnmessageError(
-                        title='Conversation connection failed',
-                        message=str(failure)))
+            if failure.check(txtorcon.socks.HostUnreachableError,
+                             txtorcon.socks.TtlExpiredError):
+                raise Failure(errors.OfflinePeerError(
+                    title=failure.getErrorMessage(),
+                    contact=conversation.contact.name))
+            else:
+                raise Failure(errors.UnmessageError(
+                    title='Conversation connection failed',
+                    message=str(failure)))
 
         manager = conversation
 
@@ -971,7 +969,7 @@ class Peer(object):
 
             self._state = Peer.state_running
 
-            self._send_presence()
+            self._send_online_presence()
 
             # TODO maybe return something useful to the UI?
             self._ui.notify_peer_started(
@@ -995,7 +993,7 @@ class Peer(object):
 
         self._save_peer_info()
 
-        self._send_presence(offline=True)
+        join(self._send_offline_presence())
 
         self._event_stop.set()
 
@@ -1742,22 +1740,13 @@ class ElementParser(object):
                     message.format(conversation.contact.name)))
 
     def _parse_pres_element(self, element, conversation, connection=None):
+        notification = notifications.UnmessageNotification(
+            '{} is {}'.format(conversation.contact.name, str(element)))
         if str(element) == PresenceElement.status_online:
-            conversation.ui.notify_online(
-                notifications.UnmessageNotification(
-                    '{} is online'.format(conversation.contact.name)))
+            conversation.ui.notify_online(notification)
         elif str(element) == PresenceElement.status_offline:
-            if element.sender == self.peer.name:
-                # remove the name from the list of pending presence packets and
-                # set the event if it was the last one
-                self.peer._presence_convs.remove(element.receiver)
-                if not self.peer._presence_convs:
-                    self.peer._presence_event.set()
-            else:
-                conversation.close()
-                conversation.ui.notify_offline(
-                    notifications.UnmessageNotification(
-                        '{} is offline'.format(conversation.contact.name)))
+            conversation.close()
+            conversation.ui.notify_offline(notification)
 
     def _parse_msg_element(self, element, conversation, connection=None):
         Conversation.parse_message_element(element, conversation)
