@@ -918,6 +918,7 @@ class Peer(object):
                 message='A copy/paste mechanism for your system could not be '
                         'found'))
 
+    @inlineCallbacks
     def start(self, local_server_ip=None,
               local_server_port=None,
               launch_tor=True,
@@ -953,40 +954,27 @@ class Peer(object):
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
 
-        def peer_started(result):
-            self._notify_bootstrap('Peer started')
+        yield self._start_server(launch_tor)
 
-            self._axolotl = Axolotl(name=self.name,
-                                    dbname=self._path_axolotl_db,
-                                    dbpassphrase=None,
-                                    nonthreaded_sql=False)
-            if not self.identity_keys:
-                self._identity_keys = pyaxo.generate_keypair()
+        self._notify_bootstrap('Peer started')
 
-            self._conversations = self._load_conversations()
-            for c in self.conversations:
-                c.start()
+        self._axolotl = Axolotl(name=self.name,
+                                dbname=self._path_axolotl_db,
+                                dbpassphrase=None,
+                                nonthreaded_sql=False)
+        if not self.identity_keys:
+            self._identity_keys = pyaxo.generate_keypair()
 
-            self._state = Peer.state_running
+        self._conversations = self._load_conversations()
+        for c in self.conversations:
+            c.start()
 
-            self._send_online_presence()
+        self._state = Peer.state_running
 
-            # TODO maybe return something useful to the UI?
-            self._ui.notify_peer_started(
-                notifications.UnmessageNotification(title='Peer started',
-                                                    message=str(result)))
+        self._send_online_presence()
 
-        def peer_failed(failure):
-            self._ui.notify_peer_failed(notifications.UnmessageNotification(
-                title='Peer failed',
-                message=failure.getErrorMessage()))
-
-        def errback(reason):
-            self._ui.notify_error(errors.UnmessageError(str(reason)))
-
-        d = self._start_server(launch_tor)
-        d.addCallbacks(peer_started, peer_failed)
-        d.addErrback(errback)
+        # TODO maybe return something useful to the UI?
+        returnValue(notifications.UnmessageNotification('Peer started'))
 
     @inlineCallbacks
     def stop(self):

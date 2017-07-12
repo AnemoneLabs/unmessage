@@ -271,6 +271,7 @@ class Cli(PeerUi):
     def display_help(self):
         self.display_str(self.help_info)
 
+    @inlineCallbacks
     def init_peer(self, name,
                   local_server_ip,
                   local_server_port,
@@ -279,14 +280,20 @@ class Cli(PeerUi):
                   tor_control_port,
                   local_mode):
         self.peer = Peer(name, self)
-        self.peer.start(local_server_ip,
-                        local_server_port,
-                        launch_tor,
-                        tor_socks_port,
-                        tor_control_port,
-                        local_mode,
-                        begin_log=True,
-                        log_level=LogLevel.debug)
+        try:
+            notification = yield self.peer.start(local_server_ip,
+                                                 local_server_port,
+                                                 launch_tor,
+                                                 tor_socks_port,
+                                                 tor_control_port,
+                                                 local_mode,
+                                                 begin_log=True,
+                                                 log_level=LogLevel.debug)
+        except Exception as e:
+            self.notify_peer_failed(
+                errors.UnmessageError(title=str(type(e)), message=str(e)))
+        else:
+            self.notify_peer_started(notification)
 
     def load_convs(self):
         for c in self.peer.conversations:

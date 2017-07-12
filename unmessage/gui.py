@@ -128,6 +128,7 @@ class Gui(Tk.Tk, PeerUi):
             pass
         self.after(100, self.check_calls)
 
+    @inlineCallbacks
     def init_peer(self, name,
                   local_server_ip=None,
                   local_server_port=None,
@@ -138,15 +139,21 @@ class Gui(Tk.Tk, PeerUi):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
         self.peer = Peer(name, self)
-        self.peer.start(local_server_ip,
-                        local_server_port,
-                        launch_tor,
-                        tor_socks_port,
-                        tor_control_port,
-                        local_mode,
-                        begin_log=True,
-                        begin_log_std=True,
-                        log_level=LogLevel.debug)
+        try:
+            notification = yield self.peer.start(local_server_ip,
+                                                 local_server_port,
+                                                 launch_tor,
+                                                 tor_socks_port,
+                                                 tor_control_port,
+                                                 local_mode,
+                                                 begin_log=True,
+                                                 begin_log_std=True,
+                                                 log_level=LogLevel.debug)
+        except Exception as e:
+            self.notify_peer_failed(
+                errors.UnmessageError(title=str(type(e)), message=str(e)))
+        else:
+            self.notify_peer_started(notification)
 
     @threadsafe
     def display_info(self, message, title=None):
