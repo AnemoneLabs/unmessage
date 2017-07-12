@@ -988,19 +988,20 @@ class Peer(object):
         d.addCallbacks(peer_started, peer_failed)
         d.addErrback(errback)
 
+    @inlineCallbacks
     def stop(self):
         self.log.info('Stopping peer')
 
         self._save_peer_info()
 
-        join(self._send_offline_presence())
+        yield self._send_offline_presence()
 
         self._event_stop.set()
 
         for c in self.conversations:
             c.close()
 
-        join(self._stop_tor())
+        yield self._stop_tor()
 
         self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 

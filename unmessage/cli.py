@@ -17,6 +17,7 @@ from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 from .ui import displays_error as _displays_error
 from .ui import displays_result as _displays_result
+from .utils import join
 
 
 DEFAULT_PREFIX = '>'
@@ -264,7 +265,7 @@ class Cli(PeerUi):
 
     def stop(self):
         self.event_stop.set()
-        self.peer.stop()
+        join(self.peer.stop())
         self.curses_helper.end_curses()
 
     def display_help(self):

@@ -19,6 +19,7 @@ from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 from .ui import displays_error as _displays_error
 from .ui import displays_result as _displays_result
+from .utils import join
 
 
 def threadsafe(f):
@@ -252,7 +253,7 @@ class Gui(Tk.Tk, PeerUi):
 
     def quit(self):
         try:
-            self.peer.stop()
+            join(self.peer.stop())
         except AttributeError:
             # the user never initialized a peer
             pass
