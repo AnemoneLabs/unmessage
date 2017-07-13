@@ -107,6 +107,11 @@ class Peer(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
+        # TODO improve the way the reactor is run
+        def run_reactor():
+            self._twisted_reactor.run(installSignalHandlers=0)
+        thread.start_new_thread(run_reactor, ())
+
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._info = PeerInfo(port_local_server=PORT)
@@ -669,13 +674,6 @@ class Peer(object):
 
         d_server = endpoint.listen(self._twisted_factory)
         d_server.addCallbacks(endpoint_listening, d.errback)
-
-        def run_reactor():
-            self._notify_bootstrap('Running reactor')
-
-            # TODO improve the way the reactor is run
-            self._twisted_reactor.run(installSignalHandlers=0)
-        thread.start_new_thread(run_reactor, ())
 
         return d
 
