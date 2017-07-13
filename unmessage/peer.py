@@ -649,33 +649,28 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
+    @inlineCallbacks
     def _start_server(self, launch_tor):
         self._notify_bootstrap('Configuring local server')
 
-        endpoint = TCP4ServerEndpoint(self._twisted_reactor,
-                                      self._port_local_server,
-                                      interface=self._ip_local_server)
-        self._twisted_server_endpoint = endpoint
-
-        d = Deferred()
-
-        def endpoint_listening(port):
-            self._notify_bootstrap('Running local server')
-
-            if self._local_mode:
-                d.callback(None)
-            else:
-                d_tor = self._start_tor(launch_tor)
-                d_tor.addCallbacks(d.callback, d.errback)
+        self._twisted_server_endpoint = TCP4ServerEndpoint(
+            self._twisted_reactor,
+            self._port_local_server,
+            interface=self._ip_local_server)
 
         self._twisted_factory = _ConversationFactory(
             peer=self,
             connection_made=self._add_intro_manager)
 
-        d_server = endpoint.listen(self._twisted_factory)
-        d_server.addCallbacks(endpoint_listening, d.errback)
+        self._notify_bootstrap('Running local server')
 
-        return d
+        yield self._twisted_server_endpoint.listen(self._twisted_factory)
+
+        if self._local_mode:
+            result = None
+        else:
+            result = yield self._start_tor(launch_tor)
+        returnValue(result)
 
     @inlineCallbacks
     def _start_tor(self, launch_tor):
