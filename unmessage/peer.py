@@ -1196,6 +1196,16 @@ class Conversation(object):
         self.thread_in_packets.daemon = True
 
     @classmethod
+    def parse_presence_element(cls, element, conversation):
+        notification = notifications.UnmessageNotification(
+            '{} is {}'.format(conversation.contact.name, str(element)))
+        if str(element) == PresenceElement.status_online:
+            conversation.ui.notify_online(notification)
+        elif str(element) == PresenceElement.status_offline:
+            conversation.close()
+            conversation.ui.notify_offline(notification)
+
+    @classmethod
     def parse_message_element(cls, element, conversation):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
@@ -1729,13 +1739,7 @@ class ElementParser(object):
                     message.format(conversation.contact.name)))
 
     def _parse_pres_element(self, element, conversation, connection=None):
-        notification = notifications.UnmessageNotification(
-            '{} is {}'.format(conversation.contact.name, str(element)))
-        if str(element) == PresenceElement.status_online:
-            conversation.ui.notify_online(notification)
-        elif str(element) == PresenceElement.status_offline:
-            conversation.close()
-            conversation.ui.notify_offline(notification)
+        Conversation.parse_presence_element(element, conversation)
 
     def _parse_msg_element(self, element, conversation, connection=None):
         Conversation.parse_message_element(element, conversation)
