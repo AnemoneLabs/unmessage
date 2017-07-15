@@ -15,7 +15,7 @@ import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
-from twisted.internet import reactor
+from twisted.internet.base import ReactorBase
 from twisted.internet.defer import Deferred, DeferredList
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
@@ -70,6 +70,10 @@ class Peer(object):
     state_stopped = 'stopped'
 
     _peer_name = attr.ib(validator=raise_invalid_name)
+    _twisted_reactor = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(ReactorBase)),
+        default=None)
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
@@ -91,7 +95,7 @@ class Peer(object):
     _ip_local_server = attr.ib(init=False, default=HOST)
     _local_mode = attr.ib(init=False, default=False)
 
-    _twisted_reactor = attr.ib(init=False, default=reactor)
+    _has_own_reactor = attr.ib(init=False, default=False)
     _twisted_server_endpoint = attr.ib(init=False, default=None)
     _twisted_factory = attr.ib(init=False, default=None)
 
@@ -107,10 +111,16 @@ class Peer(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
-        # TODO improve the way the reactor is run
-        def run_reactor():
-            self._twisted_reactor.run(installSignalHandlers=0)
-        thread.start_new_thread(run_reactor, ())
+        if self._twisted_reactor is None:
+            # TODO improve the way the reactor is run
+            from twisted.internet import reactor
+
+            self._twisted_reactor = reactor
+            self._has_own_reactor = True
+
+            def run_reactor():
+                self._twisted_reactor.run(installSignalHandlers=0)
+            thread.start_new_thread(run_reactor, ())
 
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
@@ -325,8 +335,6 @@ class Peer(object):
         return manager
 
     def _connect(self, address):
-        d = Deferred()
-
         if self._local_mode:
             point = TCP4ClientEndpoint(self._twisted_reactor,
                                        host=HOST, port=address.port)
@@ -337,14 +345,22 @@ class Peer(object):
                                       socks_port=self._port_tor_socks,
                                       reactor=self._twisted_reactor)
 
-        def connect_from_thread():
-            d_conn_proto = connectProtocol(
-                point, _ConversationProtocol(self._twisted_factory))
-            d_conn_proto.addCallbacks(d.callback, d.errback)
+        if self._has_own_reactor:
+            d = Deferred()
 
-        self._twisted_reactor.callFromThread(connect_from_thread)
+            def connect_from_thread():
+                d_conn_proto = connectProtocol(
+                    point,
+                    _ConversationProtocol(self._twisted_factory))
+                d_conn_proto.addCallbacks(d.callback, d.errback)
 
-        return d
+            self._twisted_reactor.callFromThread(connect_from_thread)
+
+            return d
+        else:
+            return connectProtocol(
+                point,
+                _ConversationProtocol(self._twisted_factory))
 
     def _create_request(self, contact):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
@@ -985,7 +1001,8 @@ class Peer(object):
 
         yield self._stop_tor()
 
-        self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
+        if self._has_own_reactor:
+            self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
         self._state = Peer.state_stopped
 

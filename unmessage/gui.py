@@ -138,7 +138,7 @@ class Gui(Tk.Tk, PeerUi):
                   local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
-        self.peer = Peer(name, self)
+        self.peer = Peer(name, ui=self)
         try:
             notification = yield self.peer.start(local_server_ip,
                                                  local_server_port,
