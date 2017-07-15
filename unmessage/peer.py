@@ -707,7 +707,19 @@ class Peer(object):
             endpoint = TCP4ClientEndpoint(self._twisted_reactor,
                                           HOST,
                                           self._port_tor_control)
-            self._tor = yield txtorcon.connect(self._twisted_reactor, endpoint)
+            if self._has_own_reactor:
+                d = Deferred()
+
+                def connect_from_thread():
+                    d_tor = txtorcon.connect(self._twisted_reactor, endpoint)
+                    d_tor.addCallbacks(d.callback, d.errback)
+
+                self._twisted_reactor.callFromThread(connect_from_thread)
+
+                self._tor = yield d
+            else:
+                self._tor = yield txtorcon.connect(self._twisted_reactor,
+                                                   endpoint)
 
         self._notify_bootstrap('Controlling Tor process')
 
