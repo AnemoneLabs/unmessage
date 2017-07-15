@@ -19,7 +19,6 @@ from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
 from .ui import displays_error as _displays_error
 from .ui import displays_result as _displays_result
-from .utils import join
 
 
 def threadsafe(f):
@@ -258,9 +257,10 @@ class Gui(Tk.Tk, PeerUi):
     def copy_onion(self):
         self.peer.copy_onion()
 
+    @inlineCallbacks
     def quit(self):
         try:
-            join(self.peer.stop())
+            yield self.peer.stop()
         except AttributeError:
             # the user never initialized a peer
             pass
