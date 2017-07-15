@@ -57,7 +57,8 @@ def displays_result(f):
 
 
 class Gui(Tk.Tk, PeerUi):
-    def __init__(self, name,
+    def __init__(self, reactor,
+                 name,
                  local_server_ip=None,
                  local_server_port=None,
                  launch_tor=True,
@@ -67,6 +68,8 @@ class Gui(Tk.Tk, PeerUi):
         super(Gui, self).__init__()
 
         self.log = loggerFor(self)
+
+        self.reactor = reactor
 
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)
@@ -137,7 +140,7 @@ class Gui(Tk.Tk, PeerUi):
                   local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
-        self.peer = Peer(name, ui=self)
+        self.peer = Peer(name, self.reactor, ui=self)
         try:
             notification = yield self.peer.start(local_server_ip,
                                                  local_server_port,
@@ -264,7 +267,7 @@ class Gui(Tk.Tk, PeerUi):
         except AttributeError:
             # the user never initialized a peer
             pass
-        self.destroy()
+        self.reactor.stop()
 
 
 class BootstrapTab(Tk.Frame, object):
@@ -682,13 +685,18 @@ def main(name=None):
 
     args = parser.parse_args()
 
-    Gui(args.name,
-        args.local_server_ip,
-        args.local_server_port,
-        args.connect_to_tor,
-        args.tor_socks_port,
-        args.tor_control_port,
-        args.local_mode).mainloop()
+    from twisted.internet import reactor, tksupport
+
+    gui = Gui(reactor,
+              args.name,
+              args.local_server_ip,
+              args.local_server_port,
+              args.connect_to_tor,
+              args.tor_socks_port,
+              args.tor_control_port,
+              args.local_mode)
+    tksupport.install(gui)
+    reactor.run()
 
 
 if __name__ == '__main__':
