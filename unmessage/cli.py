@@ -440,11 +440,10 @@ class Cli(PeerUi):
                                    message=e.message,
                                    error=True)
 
+    @displays_error
+    @displays_result
     def untalk(self, name, input_device=None, output_device=None):
-        try:
-            self.peer.untalk(name, input_device, output_device)
-        except errors.UnknownContactError as e:
-            self.display_attention(e.message)
+        return self.peer.untalk(name, input_device, output_device)
 
     def display_audio_devices(self):
         devices = self.peer.get_audio_devices()

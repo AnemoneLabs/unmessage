@@ -816,6 +816,7 @@ class Peer(object):
             handshake_key=handshake_keys.pub)
         returnValue(notification)
 
+    @inlineCallbacks
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
             if self._can_talk(conversation):
@@ -826,27 +827,33 @@ class Peer(object):
                 else:
                     try:
                         untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError as e:
+                    except untalk.AudioDeviceNotFoundError:
                         conversation.remove_manager(untalk_session)
-                        self._ui.notify_error(e)
+                        raise
                     else:
-                        d = self._send_element(
+                        yield self._send_element(
                             conversation,
                             UntalkElement(
                                 b2a(untalk_session.handshake_keys.pub)))
-                        d.addCallbacks(
-                            lambda args: self._element_parser.parse(*args),
-                            lambda failure: self._notify_error(conversation,
-                                                               failure))
+                        if (untalk_session.state ==
+                                untalk.UntalkSession.state_sent):
+                            notification = notifications.UntalkNotification(
+                                message='Voice conversation request sent '
+                                        'to {}'.format(
+                                            conversation.contact.name))
+                            returnValue(notification)
+                        else:
+                            # this peer has accepted the request
+                            conversation.start_untalk()
             else:
-                self._ui.notify_error(errors.UntalkError(
+                raise errors.UntalkError(
                     message='You can only make one voice conversation at a '
-                            'time'))
+                            'time')
         else:
             # TODO automatically connect and send request
-            self._ui.notify_error(errors.UntalkError(
+            raise errors.UntalkError(
                 message='You must be connected to {} in order to start a '
-                        'conversation'.format(conversation.contact.name)))
+                        'conversation'.format(conversation.contact.name))
 
     def _can_talk(self, conversation):
         for c in self.conversations:
@@ -1054,11 +1061,8 @@ class Peer(object):
         return untalk.get_audio_devices()
 
     def untalk(self, name, input_device=None, output_device=None):
-        t = Thread(target=self._untalk,
-                   args=(self.get_conversation(name),
-                         input_device, output_device,))
-        t.daemon = True
-        t.start()
+        return self._untalk(self.get_conversation(name),
+                            input_device, output_device)
 
     @inlineCallbacks
     def send_message(self, name, plaintext):
@@ -1737,29 +1741,20 @@ class ElementParser(object):
         FileSession.parse_file_element(element, conversation)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
-        message = None
         if conversation.untalk_session:
-            if element.sender == self.peer.name:
-                if (conversation.untalk_session.state ==
-                        untalk.UntalkSession.state_sent):
-                    message = 'voice conversation request sent to {}'
-                else:
-                    # this peer has accepted the request
-                    conversation.start_untalk()
-            elif (conversation.untalk_session.state ==
+            if (conversation.untalk_session.state ==
                     untalk.UntalkSession.state_sent):
                 # the other peer has accepted the request
                 conversation.start_untalk(
                     other_handshake_key=a2b(str(element)))
-        elif element.receiver == self.peer.name:
-                message = '{} wishes to start a voice conversation'
-                conversation.init_untalk(connection,
-                                         other_handshake_key=a2b(str(element)))
+        else:
+            conversation.init_untalk(connection,
+                                     other_handshake_key=a2b(str(element)))
 
-        if message:
             conversation.ui.notify(
                 notifications.UntalkNotification(
-                    message.format(conversation.contact.name)))
+                    '{} wishes to start a voice conversation'.format(
+                        conversation.contact.name)))
 
     def _parse_pres_element(self, element, conversation, connection=None):
         Conversation.parse_presence_element(element, conversation)
