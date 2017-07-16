@@ -1741,20 +1741,9 @@ class ElementParser(object):
         FileSession.parse_file_element(element, conversation)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
-        if conversation.untalk_session:
-            if (conversation.untalk_session.state ==
-                    untalk.UntalkSession.state_sent):
-                # the other peer has accepted the request
-                conversation.start_untalk(
-                    other_handshake_key=a2b(str(element)))
-        else:
-            conversation.init_untalk(connection,
-                                     other_handshake_key=a2b(str(element)))
-
-            conversation.ui.notify(
-                notifications.UntalkNotification(
-                    '{} wishes to start a voice conversation'.format(
-                        conversation.contact.name)))
+        untalk.UntalkSession.parse_untalk_element(element,
+                                                  conversation,
+                                                  connection)
 
     def _parse_pres_element(self, element, conversation, connection=None):
         Conversation.parse_presence_element(element, conversation)
