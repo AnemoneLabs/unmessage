@@ -4,7 +4,8 @@ import curses
 import sys
 from curses.textpad import Textbox
 from functools import wraps
-from threading import Event, RLock
+from signal import signal, SIGWINCH
+from threading import RLock
 
 from pyaxo import b2a
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -141,11 +142,12 @@ class Cli(PeerUi):
         notification.message += ' using "{} {}"'.format(cmd, params)
         return notification
 
-    def __init__(self):
+    def __init__(self, reactor):
+        self.reactor = reactor
+
         self.log = loggerFor(self)
 
         self.help_info = None
-        self.event_stop = Event()
         self.remote_mode = False
 
         self.curses_helper = None
@@ -238,6 +240,7 @@ class Cli(PeerUi):
         window = window or self.curses_helper.output_win
         window.clear()
 
+    @inlineCallbacks
     def start(self, name,
               local_server_ip=None,
               local_server_port=None,
@@ -259,45 +262,27 @@ class Cli(PeerUi):
         self.display_info(message=APP_NAME,
                           window=self.curses_helper.header_win, clear=True)
 
+        self.curses_helper.update_input_window(self.prefix)
+        self.reactor.addReader(self)
+
         try:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
+            yield self.init_peer(name,
+                                 local_server_ip,
+                                 local_server_port,
+                                 launch_tor,
+                                 tor_socks_port,
+                                 tor_control_port,
+                                 local_mode)
         except errors.UnmessageError as e:
             self.display_attention(e.message, e.title, error=True)
 
-        try:
-            while not self.event_stop.isSet():
-                self.curses_helper.update_input_window(self.prefix)
-
-                try:
-                    data = self.curses_helper.read_input()
-                except errors.CursesScreenResizedError:
-                    # re-initialize the windows with new sizes and positions
-                    self.curses_helper.init_windows()
-                else:
-                    command, args = self.parse_data(data)
-                    if command:
-                        if (self.peer.is_running or
-                                command in NOT_RUNNING_COMMANDS):
-                            self.make_call(command, args)
-                        else:
-                            self.display_attention(
-                                'This command can only be called when the '
-                                'peer is running')
-        except KeyboardInterrupt:
-            pass
-        self.stop()
-
     @inlineCallbacks
     def stop(self):
-        self.event_stop.set()
-        yield self.peer.stop()
-        self.curses_helper.end_curses()
+        try:
+            yield self.peer.stop()
+        except:
+            pass
+        self.reactor.stop()
 
     def display_help(self):
         self.display_str(self.help_info)
@@ -310,7 +295,7 @@ class Cli(PeerUi):
                   tor_socks_port,
                   tor_control_port,
                   local_mode):
-        self.peer = Peer(name, ui=self)
+        self.peer = Peer(name, self.reactor, ui=self)
         try:
             notification = yield self.peer.start(local_server_ip,
                                                  local_server_port,
@@ -544,6 +529,26 @@ class Cli(PeerUi):
         self.display_attention(notification.message, notification.title,
                                error=True)
 
+    def doRead(self):
+        textpad = self.curses_helper.textpad
+        ch = textpad.win.getch()
+        if ch:
+            if textpad.do_command(ch):
+                textpad.win.refresh()
+            else:
+                self.gather(textpad)
+
+    def gather(self, textpad):
+        data = textpad.gather().strip()
+        command, args = self.parse_data(data)
+        if command:
+            if self.peer.is_running or command in NOT_RUNNING_COMMANDS:
+                self.make_call(command, args)
+            else:
+                self.display_attention('This command can only be called when '
+                                       'the peer is running')
+        self.curses_helper.update_input_window(self.prefix)
+
     def parse_data(self, data):
         command = args = None
         prefix_len = sum_args_len(self.prefix)
@@ -648,7 +653,7 @@ class Cli(PeerUi):
         self.enable_presence(name)
 
     def call_quit(self):
-        self.event_stop.set()
+        self.stop()
 
     def call_req_accept(self, identity, new_name=None):
         self.accept_request(identity, new_name)
@@ -670,6 +675,18 @@ class Cli(PeerUi):
 
     def call_untalk(self, name, input_device=None, output_device=None):
         self.untalk(name, input_device, output_device)
+
+    def connectionLost(self, *args, **kwargs):
+        """End curses when the connection to the input reader is lost."""
+        CursesHelper.end_curses()
+
+    def fileno(self):
+        """Return the File Descriptor index used to read input."""
+        return 0
+
+    def logPrefix(self):
+        """Return the log prefix of the input reader."""
+        return 'curses'
 
 
 class _ConversationHandler(ConversationUi):
@@ -854,9 +871,11 @@ class CursesHelper(object):
         self.header_win = self._create_header_window()
 
         self.textpad = None
-        self.textpad_validator = _Validator(self)
 
         self.ui = ui
+
+        # re-initialize the windows with new sizes and positions on resize
+        signal(SIGWINCH, lambda sig, stack: self.init_windows())
 
         self.init_windows()
 
@@ -904,11 +923,8 @@ class CursesHelper(object):
         self.output_win.init()
         self.header_win.init()
 
-        self.textpad = _Textbox(self.input_win, self.ui)
+        self.textpad = _Textbox(self.input_win)
         self.textpad.stripspaces = True
-
-    def read_input(self):
-        return self.textpad.edit(self.textpad_validator.validate).strip()
 
     @sync_curses
     def update_input_window(self, args_list):
@@ -970,29 +986,17 @@ class _Textbox(Textbox, object):
     only requires an <Enter>. This subclass fixes this problem by signalling
     completion on <Enter> as well as ^g. Also, map <Backspace> key to ^h.
     """
-    def __init__(self, win, ui, insert_mode=True):
+    def __init__(self, win, insert_mode=True):
         super(_Textbox, self).__init__(win.curses_window, insert_mode)
-        self.ui = ui
 
     @sync_curses
     def do_command(self, ch):
-        if ch == curses.KEY_RESIZE:
-            raise errors.CursesScreenResizedError()
         if ch == 10:  # Enter
             return 0
         if ch == 127:  # BackSpace
             return 8
 
         return Textbox.do_command(self, ch)
-
-
-class _Validator:
-    def __init__(self, ui):
-        self.ui = ui
-
-    @sync_curses
-    def validate(self, ch):
-        return ch
 
 
 def main(name=None):
@@ -1020,7 +1024,9 @@ def main(name=None):
 
     args = parser.parse_args()
 
-    cli = Cli()
+    from twisted.internet import reactor
+
+    cli = Cli(reactor)
     cli.start(args.name,
               args.local_server_ip,
               args.local_server_port,
@@ -1029,6 +1035,7 @@ def main(name=None):
               args.tor_control_port,
               args.remote_mode,
               args.local_mode)
+    reactor.run()
 
 
 if __name__ == '__main__':
