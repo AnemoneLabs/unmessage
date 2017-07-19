@@ -3,7 +3,6 @@ import errno
 import hmac
 import os
 import sqlite3
-import thread
 from hashlib import sha256
 from Queue import Queue
 from threading import Event, Lock, Thread
@@ -71,9 +70,7 @@ class Peer(object):
 
     _peer_name = attr.ib(validator=raise_invalid_name)
     _twisted_reactor = attr.ib(
-        validator=attr.validators.optional(
-            attr.validators.instance_of(ReactorBase)),
-        default=None)
+        validator=attr.validators.instance_of(ReactorBase))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
@@ -95,7 +92,6 @@ class Peer(object):
     _ip_local_server = attr.ib(init=False, default=HOST)
     _local_mode = attr.ib(init=False, default=False)
 
-    _has_own_reactor = attr.ib(init=False, default=False)
     _twisted_server_endpoint = attr.ib(init=False, default=None)
     _twisted_factory = attr.ib(init=False, default=None)
 
@@ -111,17 +107,6 @@ class Peer(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
-        if self._twisted_reactor is None:
-            # TODO improve the way the reactor is run
-            from twisted.internet import reactor
-
-            self._twisted_reactor = reactor
-            self._has_own_reactor = True
-
-            def run_reactor():
-                self._twisted_reactor.run(installSignalHandlers=0)
-            thread.start_new_thread(run_reactor, ())
-
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._info = PeerInfo(port_local_server=PORT)
@@ -345,22 +330,8 @@ class Peer(object):
                                       socks_port=self._port_tor_socks,
                                       reactor=self._twisted_reactor)
 
-        if self._has_own_reactor:
-            d = Deferred()
-
-            def connect_from_thread():
-                d_conn_proto = connectProtocol(
-                    point,
-                    _ConversationProtocol(self._twisted_factory))
-                d_conn_proto.addCallbacks(d.callback, d.errback)
-
-            self._twisted_reactor.callFromThread(connect_from_thread)
-
-            return d
-        else:
-            return connectProtocol(
-                point,
-                _ConversationProtocol(self._twisted_factory))
+        return connectProtocol(point,
+                               _ConversationProtocol(self._twisted_factory))
 
     def _create_request(self, contact):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
@@ -707,19 +678,7 @@ class Peer(object):
             endpoint = TCP4ClientEndpoint(self._twisted_reactor,
                                           HOST,
                                           self._port_tor_control)
-            if self._has_own_reactor:
-                d = Deferred()
-
-                def connect_from_thread():
-                    d_tor = txtorcon.connect(self._twisted_reactor, endpoint)
-                    d_tor.addCallbacks(d.callback, d.errback)
-
-                self._twisted_reactor.callFromThread(connect_from_thread)
-
-                self._tor = yield d
-            else:
-                self._tor = yield txtorcon.connect(self._twisted_reactor,
-                                                   endpoint)
+            self._tor = yield txtorcon.connect(self._twisted_reactor, endpoint)
 
         self._notify_bootstrap('Controlling Tor process')
 
@@ -1019,9 +978,6 @@ class Peer(object):
             c.close()
 
         yield self._stop_tor()
-
-        if self._has_own_reactor:
-            self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
 
         self._state = Peer.state_stopped
 
