@@ -253,15 +253,46 @@ class Cli(PeerUi):
         if not name:
             print 'unMessage could not find a name to use'
             print 'Run unMessage with `-name`'
-        else:
-            curses.wrapper(self.start_main,
-                           name,
+            return
+
+        self.curses_helper = CursesHelper(ui=self)
+
+        self.display_info(message=APP_NAME,
+                          window=self.curses_helper.header_win, clear=True)
+
+        try:
+            self.init_peer(name,
                            local_server_ip,
                            local_server_port,
                            launch_tor,
                            tor_socks_port,
                            tor_control_port,
                            local_mode)
+        except errors.UnmessageError as e:
+            self.display_attention(e.message, e.title, error=True)
+
+        try:
+            while not self.event_stop.isSet():
+                self.curses_helper.update_input_window(self.prefix)
+
+                try:
+                    data = self.curses_helper.read_input()
+                except errors.CursesScreenResizedError:
+                    # re-initialize the windows with new sizes and positions
+                    self.curses_helper.init_windows()
+                else:
+                    command, args = self.parse_data(data)
+                    if command:
+                        if (self.peer.is_running or
+                                command in NOT_RUNNING_COMMANDS):
+                            self.make_call(command, args)
+                        else:
+                            self.display_attention(
+                                'This command can only be called when the '
+                                'peer is running')
+        except KeyboardInterrupt:
+            pass
+        self.stop()
 
     def stop(self):
         self.event_stop.set()
@@ -486,53 +517,6 @@ class Cli(PeerUi):
     @displays_result
     def authenticate(self, name, secret):
         return self.peer.authenticate(name, secret=secret)
-
-    def start_main(self, stdscr,
-                   name,
-                   local_server_ip,
-                   local_server_port,
-                   launch_tor,
-                   tor_socks_port,
-                   tor_control_port,
-                   local_mode):
-        self.curses_helper = CursesHelper(stdscr, ui=self)
-
-        self.display_info(message=APP_NAME,
-                          window=self.curses_helper.header_win, clear=True)
-
-        try:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
-        except errors.UnmessageError as e:
-            self.display_attention(e.message, e.title, error=True)
-
-        try:
-            while not self.event_stop.isSet():
-                self.curses_helper.update_input_window(self.prefix)
-
-                try:
-                    data = self.curses_helper.read_input()
-                except errors.CursesScreenResizedError:
-                    # re-initialize the windows with new sizes and positions
-                    self.curses_helper.init_windows()
-                else:
-                    command, args = self.parse_data(data)
-                    if command:
-                        if (self.peer.is_running or
-                                command in NOT_RUNNING_COMMANDS):
-                            self.make_call(command, args)
-                        else:
-                            self.display_attention(
-                                'This command can only be called when the '
-                                'peer is running')
-        except KeyboardInterrupt:
-            pass
-        self.stop()
 
     def notify_bootstrap(self, notification):
         self.display_info(notification.message)
@@ -816,7 +800,10 @@ class CursesHelper(object):
 
     @classmethod
     @sync_curses
-    def init_curses(cls, stdscr):
+    def init_curses(cls):
+        stdscr = curses.initscr()
+        cls.stdscr = stdscr
+
         # An attempt to limit the damage from this bug in curses:
         # https://bugs.python.org/issue13051
         # The input textbox is 8 rows high. So assuming a maximum terminal
@@ -824,10 +811,15 @@ class CursesHelper(object):
         # should be smaller than this.
         sys.setrecursionlimit(4096)
 
-        cls.stdscr = stdscr
+        stdscr.keypad(True)
+        stdscr.nodelay(True)
 
+        curses.start_color()
         curses.use_default_colors()
         cls._init_color_pairs()
+
+        curses.noecho()
+        curses.cbreak()
         curses.curs_set(1)
 
     @classmethod
@@ -848,14 +840,14 @@ class CursesHelper(object):
     @classmethod
     @sync_curses
     def end_curses(cls):
-        curses.nocbreak()
-        cls.stdscr.keypad(0)
+        cls.stdscr.keypad(False)
         curses.echo()
+        curses.nocbreak()
         curses.endwin()
 
     @sync_curses
-    def __init__(self, stdscr, ui):
-        CursesHelper.init_curses(stdscr)
+    def __init__(self, ui):
+        CursesHelper.init_curses()
 
         self.input_win = self._create_input_window()
         self.output_win = self._create_output_window()
