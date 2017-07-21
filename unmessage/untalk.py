@@ -12,6 +12,7 @@ from opuslib.api import constants as opus_constants
 from opuslib.api import ctl as opus_ctl
 from opuslib.api import decoder as opus_decoder
 from opuslib.api import encoder as opus_encoder
+from pyaxo import a2b
 from twisted.internet.defer import Deferred
 
 from . import errors
@@ -87,6 +88,22 @@ class UntalkSession(object):
         with suppress_alsa_errors():
             self.audio_listen = pyaudio.PyAudio()
             self.audio_speak = pyaudio.PyAudio()
+
+    @classmethod
+    def parse_untalk_element(cls, element, conversation, connection=None):
+        if conversation.untalk_session:
+            if (conversation.untalk_session.state == cls.state_sent):
+                # the other peer has accepted the request
+                conversation.start_untalk(
+                    other_handshake_key=a2b(str(element)))
+        else:
+            conversation.init_untalk(connection,
+                                     other_handshake_key=a2b(str(element)))
+
+            conversation.ui.notify(
+                notifications.UntalkNotification(
+                    '{} wishes to start a voice conversation'.format(
+                        conversation.contact.name)))
 
     @property
     def is_talking(self):

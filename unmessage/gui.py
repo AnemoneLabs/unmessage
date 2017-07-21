@@ -9,12 +9,16 @@ from tkMessageBox import askyesno, showerror, showinfo
 from tkSimpleDialog import askstring
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
 from . import peer
 from .log import loggerFor, LogLevel
+from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
+from .ui import displays_error as _displays_error
+from .ui import displays_result as _displays_result
 
 
 def threadsafe(f):
@@ -34,8 +38,27 @@ def write_on_text(text, content, clear=True):
     text.config(state=state)
 
 
+def displays_error(f):
+    def display(self, error):
+        self.display_error(message=str(error),
+                           title=error.title)
+    return _displays_error(f, display)
+
+
+def displays_result(f):
+    def display(self, result):
+        if isinstance(result, UnmessageNotification):
+            title = result.title
+        else:
+            title = None
+        self.display_info(message=str(result),
+                          title=title)
+    return _displays_result(f, display)
+
+
 class Gui(Tk.Tk, PeerUi):
-    def __init__(self, name,
+    def __init__(self, reactor,
+                 name,
                  local_server_ip=None,
                  local_server_port=None,
                  launch_tor=True,
@@ -45,6 +68,10 @@ class Gui(Tk.Tk, PeerUi):
         super(Gui, self).__init__()
 
         self.log = loggerFor(self)
+
+        self.reactor = reactor
+
+        self.protocol('WM_DELETE_WINDOW', self.stop)
 
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)
@@ -78,7 +105,7 @@ class Gui(Tk.Tk, PeerUi):
                                   command=self.copy_peer)
         self.menu_bar.add_command(label='Copy Onion', state=Tk.DISABLED,
                                   command=self.copy_onion)
-        self.menu_bar.add_command(label='Quit', command=self.quit)
+        self.menu_bar.add_command(label='Quit', command=self.stop)
         self.config(menu=self.menu_bar)
 
         if name:
@@ -105,6 +132,7 @@ class Gui(Tk.Tk, PeerUi):
             pass
         self.after(100, self.check_calls)
 
+    @inlineCallbacks
     def init_peer(self, name,
                   local_server_ip=None,
                   local_server_port=None,
@@ -114,20 +142,37 @@ class Gui(Tk.Tk, PeerUi):
                   local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
-        self.peer = Peer(name, self)
-        self.peer.start(local_server_ip,
-                        local_server_port,
-                        launch_tor,
-                        tor_socks_port,
-                        tor_control_port,
-                        local_mode,
-                        begin_log=True,
-                        begin_log_std=True,
-                        log_level=LogLevel.debug)
+        self.peer = Peer(name, self.reactor, ui=self)
+        try:
+            notification = yield self.peer.start(local_server_ip,
+                                                 local_server_port,
+                                                 launch_tor,
+                                                 tor_socks_port,
+                                                 tor_control_port,
+                                                 local_mode,
+                                                 begin_log=True,
+                                                 begin_log_std=True,
+                                                 log_level=LogLevel.debug)
+        except Exception as e:
+            self.notify_peer_failed(
+                errors.UnmessageError(title=str(type(e)), message=str(e)))
+        else:
+            self.reactor.addSystemEventTrigger('before',
+                                               'shutdown',
+                                               self.before_stop)
+            self.notify_peer_started(notification)
+
+    @threadsafe
+    def display_info(self, message, title=None):
+        showinfo(title or 'Information', message)
+
+    @threadsafe
+    def display_error(self, message, title=None):
+        showerror(title or 'Error', message)
 
     @threadsafe
     def notify_error(self, error):
-        showerror(error.title, error.message)
+        self.display_error(error.message, error.title)
 
     @threadsafe
     def notify_bootstrap(self, notification):
@@ -164,18 +209,27 @@ class Gui(Tk.Tk, PeerUi):
 
     @threadsafe
     def notify_peer_failed(self, notification):
-        showerror(notification.title, notification.message)
+        self.display_error(notification.message, notification.title)
 
+    @displays_error
+    @displays_result
     def send_request(self, identity, key):
-        try:
-            self.peer.send_request(identity, key)
-        except errors.InvalidPublicKeyError as e:
-            showerror(e.title, e.message)
+        return self.peer.send_request(identity, key)
 
-    @threadsafe
+    @displays_error
+    @displays_result
+    @inlineCallbacks
+    def accept_request(self, identity, new_name):
+        notification = yield self.peer.accept_request(identity, new_name)
+        self.add_conversation(notification.conversation)
+        returnValue(notification)
+
+    @displays_result
     def notify_conv_established(self, notification):
         self.add_conversation(notification.conversation)
+        return notification
 
+    @threadsafe
     def add_conversation(self, conversation):
         new_tab = ChatTab(parent=self.notebook,
                           gui=self,
@@ -199,10 +253,6 @@ class Gui(Tk.Tk, PeerUi):
                                  contact=notification.contact)
         self.wait_window(w)
 
-    @threadsafe
-    def notify_out_request(self, notification):
-        pass
-
     def copy_identity(self):
         self.peer.copy_identity()
 
@@ -215,13 +265,16 @@ class Gui(Tk.Tk, PeerUi):
     def copy_onion(self):
         self.peer.copy_onion()
 
-    def quit(self):
-        try:
-            self.peer.stop()
-        except AttributeError:
+    @inlineCallbacks
+    def before_stop(self):
+        if self.peer is None:
             # the user never initialized a peer
             pass
-        self.destroy()
+        else:
+            yield self.peer.stop()
+
+    def stop(self):
+        self.reactor.stop()
 
 
 class BootstrapTab(Tk.Frame, object):
@@ -359,10 +412,27 @@ class ChatTab(Tk.Frame, ConversationUi, object):
                       content=[content + '\n'],
                       clear=False)
 
+    def display_info(self, message, title=None):
+        self.gui.display_info(message, title)
+
+    def display_error(self, message, title=None):
+        self.gui.display_error(message, title)
+
+    @threadsafe
+    def display_message(self, message, sender):
+        self.write_on_text(content='{}: {}'.format(sender, message))
+
+        # scroll to the bottom
+        self.text_conversation.yview('moveto', 1.0)
+
+    @displays_error
+    @inlineCallbacks
     def send_message(self, message):
         if len(message):
-            self.peer.send_message(self.conversation.contact.name, message)
             self.text_message.delete(1.0, Tk.END)
+            yield self.peer.send_message(self.conversation.contact.name,
+                                         message)
+            self.display_message(message, self.peer.name)
 
     def set_presence(self, enable):
         self.peer.set_presence(self.conversation.contact.name, enable)
@@ -382,20 +452,23 @@ class ChatTab(Tk.Frame, ConversationUi, object):
             try:
                 self.peer.verify_contact(self.conversation.contact.name, key)
             except errors.VerificationError as e:
-                showerror(e.title, e.message)
+                self.display_error(e.message, e.title)
             else:
-                showinfo(title='Verification',
-                         message="{}'s key has been verified.".format(
-                             self.conversation.contact.name))
+                self.display_info(title='Verification',
+                                  message="{}'s key has been verified.".format(
+                                      self.conversation.contact.name))
             self.update_frame()
 
+    @displays_error
+    @displays_result
     def authenticate(self):
         secret = askstring(title='Authentication',
                            prompt='Provide the shared secret:',
                            parent=self,
                            show='*')
         if secret:
-            self.peer.authenticate(self.conversation.contact.name, secret)
+            return self.peer.authenticate(self.conversation.contact.name,
+                                          secret)
 
     @threadsafe
     def notify_disconnect(self, notification):
@@ -414,14 +487,8 @@ class ChatTab(Tk.Frame, ConversationUi, object):
         self.update_frame()
         self.write_on_text(notification.message)
 
-    @threadsafe
     def notify_message(self, notification):
-        self.write_on_text(content=''.join([notification.element.sender,
-                                            ': ',
-                                            notification.message]))
-
-        # scroll to the bottom
-        self.text_conversation.yview('moveto', 1.0)
+        self.display_message(notification.message, notification.element.sender)
 
     @threadsafe
     def notify_finished_authentication(self, notification):
@@ -501,7 +568,7 @@ class PeerCreationTab(Tk.Frame, object):
                                tor_socks_port=tor_socks_port,
                                tor_control_port=tor_control_port)
         except errors.InvalidNameError as e:
-            showerror(e.title, e.message)
+            self.gui.display_error(e.message, e.title)
         else:
             self.destroy()
 
@@ -573,8 +640,8 @@ class InboundRequestWindow(RequestWindow):
         super(InboundRequestWindow, self).__init__(gui, peer, contact)
 
     def send_or_accept(self):
-        new_name = self.entry_name.get().strip()
-        self.peer.accept_request(self.contact.identity, new_name)
+        self.gui.accept_request(identity=self.contact.identity,
+                                new_name=self.entry_name.get().strip())
         self.destroy()
 
 
@@ -625,13 +692,18 @@ def main(name=None):
 
     args = parser.parse_args()
 
-    Gui(args.name,
-        args.local_server_ip,
-        args.local_server_port,
-        args.connect_to_tor,
-        args.tor_socks_port,
-        args.tor_control_port,
-        args.local_mode).mainloop()
+    from twisted.internet import reactor, tksupport
+
+    gui = Gui(reactor,
+              args.name,
+              args.local_server_ip,
+              args.local_server_port,
+              args.connect_to_tor,
+              args.tor_socks_port,
+              args.tor_control_port,
+              args.local_mode)
+    tksupport.install(gui)
+    reactor.run()
 
 
 if __name__ == '__main__':

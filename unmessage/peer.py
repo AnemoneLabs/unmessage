@@ -3,7 +3,6 @@ import errno
 import hmac
 import os
 import sqlite3
-import thread
 from hashlib import sha256
 from Queue import Queue
 from threading import Event, Lock, Thread
@@ -15,8 +14,9 @@ import txtorcon
 from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
-from twisted.internet import reactor
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
+from twisted.internet.base import ReactorBase
+from twisted.internet.defer import Deferred, DeferredList
+from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.protocol import Factory
@@ -69,6 +69,7 @@ class Peer(object):
     state_stopped = 'stopped'
 
     _peer_name = attr.ib(validator=raise_invalid_name)
+    _reactor = attr.ib(validator=attr.validators.instance_of(ReactorBase))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
@@ -90,7 +91,6 @@ class Peer(object):
     _ip_local_server = attr.ib(init=False, default=HOST)
     _local_mode = attr.ib(init=False, default=False)
 
-    _twisted_reactor = attr.ib(init=False, default=reactor)
     _twisted_server_endpoint = attr.ib(init=False, default=None)
     _twisted_factory = attr.ib(init=False, default=None)
 
@@ -279,40 +279,38 @@ class Peer(object):
                 axolotl=axolotl)
         return convs
 
+    def _send_online_presence(self):
+        for d in self._send_presence():
+            d.addCallback(
+                lambda (_, conversation): conversation.ui.notify_online(
+                    notifications.UnmessageNotification(
+                        '{} is online'.format(conversation.contact.name))))
+            # ignore failures
+            d.addErrback(lambda _: None)
+
+    def _send_offline_presence(self):
+        # wait until all conversations are notified
+        return DeferredList(self._send_presence(offline=True),
+                            consumeErrors=True)
+
     def _send_presence(self, offline=False):
-        # TODO use a DeferredList
-        self._presence_convs = list()
-        self._presence_event = Event()
+        if offline:
+            status = PresenceElement.status_offline
+        else:
+            status = PresenceElement.status_online
+        deferreds = list()
 
         for c in self.conversations:
             if c.contact.has_presence:
-                if offline and c.is_active:
-                    self._presence_convs.append(c.contact.name)
-                    d = self._send_element(
-                        c, PresenceElement(PresenceElement.status_offline))
-                    d.addCallbacks(
-                        lambda args: self._element_parser.parse(*args),
-                        lambda failure: self._notify_error(c, failure))
-                elif not offline and not c.is_active:
-                    self._presence_convs.append(c.contact.name)
-                    d = self._send_element(
-                        c, PresenceElement(PresenceElement.status_online))
-                    d.addCallbacks(
-                        lambda args: self._element_parser.parse(*args),
-                        lambda failure: self._notify_error(c, failure))
+                if (offline and c.is_active or
+                        not offline and not c.is_active):
+                    d = self._send_element(c, PresenceElement(status))
+                    deferreds.append(d)
 
-        if self._presence_convs:
-            if offline:
-                status = 'offline'
-            else:
-                status = 'online'
-                self._presence_convs = list()
-                self._presence_event.set()
-
+        if deferreds:
             self.log.info('Sending {status} presence', status=status)
 
-            # when going offline, wait until all conversations are notified
-            self._presence_event.wait()
+        return deferreds
 
     def _add_intro_manager(self, connection):
         manager = Introduction(self, connection)
@@ -321,24 +319,18 @@ class Peer(object):
         return manager
 
     def _connect(self, address):
-        d = Deferred()
-
         if self._local_mode:
-            point = TCP4ClientEndpoint(self._twisted_reactor,
+            point = TCP4ClientEndpoint(self._reactor,
                                        host=HOST, port=address.port)
 
         else:
             point = TorClientEndpoint(address.host, address.port,
-                                      socks_hostname=HOST)
+                                      socks_hostname=HOST,
+                                      socks_port=self._port_tor_socks,
+                                      reactor=self._reactor)
 
-        def connect_from_thread():
-            d_conn_proto = connectProtocol(
-                point, _ConversationProtocol(self._twisted_factory))
-            d_conn_proto.addCallbacks(d.callback, d.errback)
-
-        self._twisted_reactor.callFromThread(connect_from_thread)
-
-        return d
+        return connectProtocol(point,
+                               _ConversationProtocol(self._twisted_factory))
 
     def _create_request(self, contact):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
@@ -438,11 +430,11 @@ class Peer(object):
 
         self._contacts[conv.contact.name] = conv.contact
         self._conversations[conv.contact.name] = conv
-        self._ui.notify_conv_established(
-            notifications.ConversationNotification(
-                conv,
-                title='Conversation established',
-                message='You can now chat with {}'.format(conv.contact.name)))
+
+        return notifications.ConversationNotification(
+            conv,
+            title='Conversation established',
+            message='You can now chat with {}'.format(conv.contact.name))
 
     def _delete_conversation(self, conversation):
         conversation.close()
@@ -482,16 +474,15 @@ class Peer(object):
         connection.
         """
         def connection_failed(failure):
-            if element.type_ != PresenceElement.type_:
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    raise Failure(errors.OfflinePeerError(
-                        title=failure.getErrorMessage(),
-                        contact=conversation.contact.name))
-                else:
-                    raise Failure(errors.UnmessageError(
-                        title='Conversation connection failed',
-                        message=str(failure)))
+            if failure.check(txtorcon.socks.HostUnreachableError,
+                             txtorcon.socks.TtlExpiredError):
+                raise Failure(errors.OfflinePeerError(
+                    title=failure.getErrorMessage(),
+                    contact=conversation.contact.name))
+            else:
+                raise Failure(errors.UnmessageError(
+                    title='Conversation connection failed',
+                    message=str(failure)))
 
         manager = conversation
 
@@ -644,98 +635,75 @@ class Peer(object):
         else:
             raise errors.CorruptedPacketError()
 
+    @inlineCallbacks
     def _start_server(self, launch_tor):
         self._notify_bootstrap('Configuring local server')
 
-        endpoint = TCP4ServerEndpoint(self._twisted_reactor,
-                                      self._port_local_server,
-                                      interface=self._ip_local_server)
-        self._twisted_server_endpoint = endpoint
-
-        d = Deferred()
-
-        def endpoint_listening(port):
-            self._notify_bootstrap('Running local server')
-
-            if self._local_mode:
-                d.callback(None)
-            else:
-                d_tor = self._start_tor(launch_tor)
-                d_tor.addCallbacks(d.callback, d.errback)
+        self._twisted_server_endpoint = TCP4ServerEndpoint(
+            self._reactor,
+            self._port_local_server,
+            interface=self._ip_local_server)
 
         self._twisted_factory = _ConversationFactory(
             peer=self,
             connection_made=self._add_intro_manager)
 
-        d_server = endpoint.listen(self._twisted_factory)
-        d_server.addCallbacks(endpoint_listening, d.errback)
+        self._notify_bootstrap('Running local server')
 
-        def run_reactor():
-            self._notify_bootstrap('Running reactor')
+        yield self._twisted_server_endpoint.listen(self._twisted_factory)
 
-            # TODO improve the way the reactor is run
-            self._twisted_reactor.run(installSignalHandlers=0)
-        thread.start_new_thread(run_reactor, ())
+        if self._local_mode:
+            result = None
+        else:
+            result = yield self._start_tor(launch_tor)
+        returnValue(result)
 
-        return d
-
+    @inlineCallbacks
     def _start_tor(self, launch_tor):
-        d_tor = Deferred()
-
-        def finish(result):
-            self._notify_bootstrap('Added Onion Service to Tor')
-
-            d_tor.callback(result)
-
-        def add_onion(tor):
-            self._tor = tor
-
-            self._notify_bootstrap('Controlling Tor process')
-
-            self._notify_bootstrap('Waiting for the Onion Service')
-
-            onion_service_string = '{} {}:{}'.format(self._port_local_server,
-                                                     self._ip_local_server,
-                                                     self._port_local_server)
-            if self.onion_service_key:
-                self._onion_service = txtorcon.EphemeralHiddenService(
-                    [onion_service_string],
-                    self.onion_service_key)
-                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
-            else:
-                def save_key(result):
-                    self._onion_service_key = self._onion_service.private_key
-
-                self._onion_service = txtorcon.EphemeralHiddenService(
-                    [onion_service_string])
-                d_onion = self._onion_service.add_to_tor(self._tor._protocol)
-                d_onion.addCallback(save_key)
-
-            d_onion.addCallback(finish)
-
         if launch_tor:
             self._notify_bootstrap('Launching Tor')
 
             def display_bootstrap_lines(prog, tag, summary):
                 self._notify_bootstrap('{}%: {}'.format(prog, summary))
 
-            d_process = txtorcon.launch(
-                self._twisted_reactor,
+            self._tor = yield txtorcon.launch(
+                self._reactor,
                 progress_updates=display_bootstrap_lines,
                 data_directory=self._path_tor_data_dir,
                 socks_port=self._port_tor_socks)
         else:
             self._notify_bootstrap('Connecting to existing Tor')
 
-            endpoint = TCP4ClientEndpoint(self._twisted_reactor,
+            endpoint = TCP4ClientEndpoint(self._reactor,
                                           HOST,
                                           self._port_tor_control)
-            d_process = txtorcon.connect(self._twisted_reactor, endpoint)
+            self._tor = yield txtorcon.connect(self._reactor, endpoint)
 
-        d_process.addCallback(add_onion)
-        d_process.addErrback(d_tor.errback)
+        self._notify_bootstrap('Controlling Tor process')
 
-        return d_tor
+        onion_service_string = '{} {}:{}'.format(self._port_local_server,
+                                                 self._ip_local_server,
+                                                 self._port_local_server)
+
+        if self.onion_service_key:
+            args = ([onion_service_string], self.onion_service_key)
+            save_key = False
+        else:
+            args = ([onion_service_string],)
+            save_key = True
+
+        self._onion_service = txtorcon.EphemeralHiddenService(*args)
+
+        self._notify_bootstrap('Waiting for the Onion Service')
+
+        yield self._onion_service.add_to_tor(self._tor._protocol)
+
+        if save_key:
+            self._onion_service_key = self._onion_service.private_key
+
+        self._notify_bootstrap('Added Onion Service to Tor')
+
+        returnValue(None)
 
     @inlineCallbacks
     def _stop_tor(self):
@@ -746,58 +714,39 @@ class Peer(object):
 
             self.log.info('Removed Onion Service from Tor')
 
+    @inlineCallbacks
     def _send_request(self, identity, key):
         if ':' not in identity:
             identity += ':' + str(PORT)
+        contact = Contact(identity, key)
+        req = self._create_request(contact)
 
         try:
-            contact = Contact(identity, key)
-        except (errors.InvalidIdentityError,
-                errors.InvalidPublicKeyError) as e:
-            self._ui.notify_error(e)
+            connection = yield self._connect(contact.address)
+        except Exception as e:
+            if Failure(e).check(txtorcon.socks.HostUnreachableError,
+                                txtorcon.socks.TtlExpiredError):
+                raise errors.OfflinePeerError(title=str(e),
+                                              contact=contact.name,
+                                              is_request=True)
+            else:
+                raise
         else:
-            req = self._create_request(contact)
+            conv = req.conversation
+            conv.start()
+            conv.set_active(connection, Conversation.state_out_req)
 
-            def connection_made(connection):
-                def request_sent(result):
-                    self._outbound_requests[contact.identity] = req
-                    self._ui.notify_out_request(
-                        notifications.ContactNotification(
-                            contact,
-                            title='Request sent',
-                            message='{} has received your request'.format(
-                                identity)))
+            yield conv.send_data(str(req.packet))
 
-                def request_failed(failure):
-                    # TODO handle expected errors and display better messages
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request packet failed',
-                        message=str(failure)))
+            self._outbound_requests[contact.identity] = req
 
-                conv = req.conversation
-                conv.start()
-                conv.set_active(connection, Conversation.state_out_req)
+            notification = notifications.ContactNotification(
+                contact,
+                title='Request sent',
+                message='{} has received your request'.format(identity))
+            returnValue(notification)
 
-                # pack the ``RequestPacket`` into a ``str`` and send it to the
-                # other peer
-                d_send_data = conv.send_data(str(req.packet))
-                d_send_data.addCallbacks(request_sent, request_failed)
-
-            def connection_failed(failure):
-                if failure.check(txtorcon.socks.HostUnreachableError,
-                                 txtorcon.socks.TtlExpiredError):
-                    self._ui.notify_error(errors.OfflinePeerError(
-                        title=failure.getErrorMessage(),
-                        contact=contact.name,
-                        is_request=True))
-                else:
-                    self._ui.notify_error(errors.UnmessageError(
-                        title='Request connection failed',
-                        message=str(failure)))
-
-            d_connect = self._connect(contact.address)
-            d_connect.addCallbacks(connection_made, connection_failed)
-
+    @inlineCallbacks
     def _accept_request(self, request, new_name):
         conv = request.conversation
 
@@ -810,7 +759,7 @@ class Peer(object):
                 raise errors.InvalidNameError()
 
         handshake_keys = pyaxo.generate_keypair()
-        self._init_conv(
+        notification = self._init_conv(
             conv,
             priv_handshake_key=handshake_keys.priv,
             other_handshake_key=a2b(
@@ -819,12 +768,13 @@ class Peer(object):
                 request.packet.handshake_packet.ratchet_key),
             mode=True)
 
-        d = self._send_element(conv,
-                               RequestElement(RequestElement.request_accepted),
-                               handshake_key=handshake_keys.pub)
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conv, failure))
+        yield self._send_element(
+            conv,
+            RequestElement(RequestElement.request_accepted),
+            handshake_key=handshake_keys.pub)
+        returnValue(notification)
 
+    @inlineCallbacks
     def _untalk(self, conversation, input_device=None, output_device=None):
         if conversation.is_active:
             if self._can_talk(conversation):
@@ -835,27 +785,33 @@ class Peer(object):
                 else:
                     try:
                         untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError as e:
+                    except untalk.AudioDeviceNotFoundError:
                         conversation.remove_manager(untalk_session)
-                        self._ui.notify_error(e)
+                        raise
                     else:
-                        d = self._send_element(
+                        yield self._send_element(
                             conversation,
                             UntalkElement(
                                 b2a(untalk_session.handshake_keys.pub)))
-                        d.addCallbacks(
-                            lambda args: self._element_parser.parse(*args),
-                            lambda failure: self._notify_error(conversation,
-                                                               failure))
+                        if (untalk_session.state ==
+                                untalk.UntalkSession.state_sent):
+                            notification = notifications.UntalkNotification(
+                                message='Voice conversation request sent '
+                                        'to {}'.format(
+                                            conversation.contact.name))
+                            returnValue(notification)
+                        else:
+                            # this peer has accepted the request
+                            conversation.start_untalk()
             else:
-                self._ui.notify_error(errors.UntalkError(
+                raise errors.UntalkError(
                     message='You can only make one voice conversation at a '
-                            'time'))
+                            'time')
         else:
             # TODO automatically connect and send request
-            self._ui.notify_error(errors.UntalkError(
+            raise errors.UntalkError(
                 message='You must be connected to {} in order to start a '
-                        'conversation'.format(conversation.contact.name)))
+                        'conversation'.format(conversation.contact.name))
 
     def _can_talk(self, conversation):
         for c in self.conversations:
@@ -866,11 +822,12 @@ class Peer(object):
                 continue
         return True
 
+    @inlineCallbacks
     def _send_message(self, conversation, plaintext):
-        d = self._send_element(conversation, MessageElement(plaintext))
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conversation,
-                                                          failure))
+        element = MessageElement(plaintext)
+        yield self._send_element(conversation, element)
+        notification = notifications.ElementNotification(element)
+        returnValue(notification)
 
     @inlineCallbacks
     def _send_file(self, conversation, file_path):
@@ -898,6 +855,7 @@ class Peer(object):
         else:
             raise errors.InactiveManagerError(conversation.contact.name)
 
+    @inlineCallbacks
     def _authenticate(self, conversation, secret):
         auth_session = conversation.auth_session
         if not auth_session or auth_session.is_waiting or \
@@ -905,13 +863,16 @@ class Peer(object):
             auth_session = conversation.init_auth()
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
-        d = self._send_element(
+        yield self._send_element(
             conversation,
             AuthenticationElement(auth_session.start(
                 conversation.keys.auth_secret_key + secret)))
-        d.addCallbacks(lambda args: self._element_parser.parse(*args),
-                       lambda failure: self._notify_error(conversation,
-                                                          failure))
+        if conversation.auth_session.is_waiting:
+            notification = notifications.UnmessageNotification(
+                title='Authentication started',
+                message='Waiting for {} to advance'.format(
+                    conversation.contact.name))
+            returnValue(notification)
 
     def get_contact(self, name):
         return self.get_conversation(name).contact
@@ -944,6 +905,7 @@ class Peer(object):
                 message='A copy/paste mechanism for your system could not be '
                         'found'))
 
+    @inlineCallbacks
     def start(self, local_server_ip=None,
               local_server_port=None,
               launch_tor=True,
@@ -979,82 +941,61 @@ class Peer(object):
         if tor_control_port:
             self._port_tor_control = int(tor_control_port)
 
-        def peer_started(result):
-            self._notify_bootstrap('Peer started')
+        yield self._start_server(launch_tor)
 
-            self._axolotl = Axolotl(name=self.name,
-                                    dbname=self._path_axolotl_db,
-                                    dbpassphrase=None,
-                                    nonthreaded_sql=False)
-            if not self.identity_keys:
-                self._identity_keys = pyaxo.generate_keypair()
+        self._notify_bootstrap('Peer started')
 
-            self._conversations = self._load_conversations()
-            for c in self.conversations:
-                c.start()
+        self._axolotl = Axolotl(name=self.name,
+                                dbname=self._path_axolotl_db,
+                                dbpassphrase=None,
+                                nonthreaded_sql=False)
+        if not self.identity_keys:
+            self._identity_keys = pyaxo.generate_keypair()
 
-            self._state = Peer.state_running
+        self._conversations = self._load_conversations()
+        for c in self.conversations:
+            c.start()
 
-            self._send_presence()
+        self._state = Peer.state_running
 
-            # TODO maybe return something useful to the UI?
-            self._ui.notify_peer_started(
-                notifications.UnmessageNotification(title='Peer started',
-                                                    message=str(result)))
+        self._send_online_presence()
 
-        def peer_failed(failure):
-            self._ui.notify_peer_failed(notifications.UnmessageNotification(
-                title='Peer failed',
-                message=failure.getErrorMessage()))
+        # TODO maybe return something useful to the UI?
+        returnValue(notifications.UnmessageNotification('Peer started'))
 
-        def errback(reason):
-            self._ui.notify_error(errors.UnmessageError(str(reason)))
-
-        d = self._start_server(launch_tor)
-        d.addCallbacks(peer_started, peer_failed)
-        d.addErrback(errback)
-
+    @inlineCallbacks
     def stop(self):
         self.log.info('Stopping peer')
 
         self._save_peer_info()
 
-        self._send_presence(offline=True)
+        yield self._send_offline_presence()
 
         self._event_stop.set()
 
         for c in self.conversations:
             c.close()
 
-        join(self._stop_tor())
-
-        self._twisted_reactor.callFromThread(self._twisted_reactor.stop)
+        yield self._stop_tor()
 
         self._state = Peer.state_stopped
 
+    @inlineCallbacks
     def send_request(self, identity, key):
         try:
             key_bytes = a2b(key)
         except TypeError:
             raise errors.InvalidPublicKeyError()
         else:
-            t = Thread(target=self._send_request, args=(identity, key_bytes,))
-            t.daemon = True
-            t.start()
+            notification = yield self._send_request(identity, key_bytes)
+            returnValue(notification)
 
+    @inlineCallbacks
     def accept_request(self, identity, new_name=None):
-        request = self._inbound_requests.pop(identity)
-
-        def _accept_request():
-            try:
-                self._accept_request(request, new_name)
-            except errors.InvalidNameError as e:
-                self._inbound_requests[identity] = request
-                self._ui.notify_error(e)
-
-        t = Thread(target=_accept_request)
-        t.daemon = True
-        t.start()
+        request = self._inbound_requests[identity]
+        notification = yield self._accept_request(request, new_name)
+        del self._inbound_requests[identity]
+        returnValue(notification)
 
     def delete_conversation(self, name):
         self._delete_conversation(self.get_conversation(name))
@@ -1075,17 +1016,14 @@ class Peer(object):
         return untalk.get_audio_devices()
 
     def untalk(self, name, input_device=None, output_device=None):
-        t = Thread(target=self._untalk,
-                   args=(self.get_conversation(name),
-                         input_device, output_device,))
-        t.daemon = True
-        t.start()
+        return self._untalk(self.get_conversation(name),
+                            input_device, output_device)
 
+    @inlineCallbacks
     def send_message(self, name, plaintext):
-        t = Thread(target=self._send_message,
-                   args=(self.get_conversation(name), plaintext,))
-        t.daemon = True
-        t.start()
+        notification = yield self._send_message(self.get_conversation(name),
+                                                plaintext)
+        returnValue(notification)
 
     @inlineCallbacks
     def send_file(self, name, file_path):
@@ -1103,10 +1041,7 @@ class Peer(object):
         self._save_file(self.get_conversation(name), checksum, file_path)
 
     def authenticate(self, name, secret):
-        t = Thread(target=self._authenticate,
-                   args=(self.get_conversation(name), secret,))
-        t.daemon = True
-        t.start()
+        return self._authenticate(self.get_conversation(name), secret)
 
 
 class Introduction(Thread):
@@ -1242,6 +1177,21 @@ class Conversation(object):
         self.thread_in_packets = Thread(target=self.check_in_packets)
         self.thread_in_packets.daemon = True
 
+    @classmethod
+    def parse_presence_element(cls, element, conversation):
+        notification = notifications.UnmessageNotification(
+            '{} is {}'.format(conversation.contact.name, str(element)))
+        if str(element) == PresenceElement.status_online:
+            conversation.ui.notify_online(notification)
+        elif str(element) == PresenceElement.status_offline:
+            conversation.close()
+            conversation.ui.notify_offline(notification)
+
+    @classmethod
+    def parse_message_element(cls, element, conversation):
+        conversation.ui.notify_message(
+            notifications.ElementNotification(element))
+
     def start(self):
         self.thread_in_data.start()
         self.thread_out_data.start()
@@ -1364,11 +1314,12 @@ class Conversation(object):
                 e.message += ' - decryption failed'
                 raise e
 
-            self.peer._init_conv(
+            notification = self.peer._init_conv(
                 self,
                 priv_handshake_key=req.handshake_keys.priv,
                 other_handshake_key=handshake_key,
                 ratchet_keys=req.ratchet_keys)
+            self.peer._ui.notify_conv_established(notification)
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
@@ -1463,6 +1414,40 @@ class AuthSession(object):
             # start from step 2 as the initial buffer was received from the
             # other party, who started the session
             self.step = 2
+
+    @classmethod
+    @inlineCallbacks
+    def parse_auth_element(cls, element, conversation):
+        buffer_ = str(element)
+        try:
+            next_buffer = conversation.auth_session.advance(buffer_)
+        except AttributeError:
+            conversation.init_auth(buffer_)
+            conversation.ui.notify_in_authentication(
+                notifications.UnmessageNotification(
+                    title='Authentication started',
+                    message='{} wishes to authenticate '.format(
+                        conversation.contact.name)))
+        else:
+            if next_buffer:
+                yield conversation.peer._send_element(
+                    conversation,
+                    AuthenticationElement(next_buffer))
+            if conversation.is_authenticated is None:
+                # the authentication is not complete as buffers are still being
+                # exchanged
+                pass
+            else:
+                if conversation.is_authenticated:
+                    title = 'Authentication successful'
+                    message = 'Your conversation with {} is authenticated!'
+                else:
+                    title = 'Authentication failed'
+                    message = 'Your conversation with {} is NOT authenticated!'
+                conversation.ui.notify_finished_authentication(
+                    notifications.UnmessageNotification(
+                        title=title,
+                        message=message.format(conversation.contact.name)))
 
     @property
     def is_authenticated(self):
@@ -1711,96 +1696,18 @@ class ElementParser(object):
         FileSession.parse_file_element(element, conversation)
 
     def _parse_untalk_element(self, element, conversation, connection=None):
-        message = None
-        if conversation.untalk_session:
-            if element.sender == self.peer.name:
-                if (conversation.untalk_session.state ==
-                        untalk.UntalkSession.state_sent):
-                    message = 'voice conversation request sent to {}'
-                else:
-                    # this peer has accepted the request
-                    conversation.start_untalk()
-            elif (conversation.untalk_session.state ==
-                    untalk.UntalkSession.state_sent):
-                # the other peer has accepted the request
-                conversation.start_untalk(
-                    other_handshake_key=a2b(str(element)))
-        elif element.receiver == self.peer.name:
-                message = '{} wishes to start a voice conversation'
-                conversation.init_untalk(connection,
-                                         other_handshake_key=a2b(str(element)))
-
-        if message:
-            conversation.ui.notify(
-                notifications.UntalkNotification(
-                    message.format(conversation.contact.name)))
+        untalk.UntalkSession.parse_untalk_element(element,
+                                                  conversation,
+                                                  connection)
 
     def _parse_pres_element(self, element, conversation, connection=None):
-        if str(element) == PresenceElement.status_online:
-            conversation.ui.notify_online(
-                notifications.UnmessageNotification(
-                    '{} is online'.format(conversation.contact.name)))
-        elif str(element) == PresenceElement.status_offline:
-            if element.sender == self.peer.name:
-                # remove the name from the list of pending presence packets and
-                # set the event if it was the last one
-                self.peer._presence_convs.remove(element.receiver)
-                if not self.peer._presence_convs:
-                    self.peer._presence_event.set()
-            else:
-                conversation.close()
-                conversation.ui.notify_offline(
-                    notifications.UnmessageNotification(
-                        '{} is offline'.format(conversation.contact.name)))
+        Conversation.parse_presence_element(element, conversation)
 
     def _parse_msg_element(self, element, conversation, connection=None):
-        conversation.ui.notify_message(
-            notifications.ElementNotification(element))
+        Conversation.parse_message_element(element, conversation)
 
     def _parse_auth_element(self, element, conversation, connection=None):
-        if element.sender == self.peer.name:
-            if conversation.auth_session.is_waiting:
-                conversation.ui.notify_out_authentication(
-                    notifications.UnmessageNotification(
-                        title='Authentication started',
-                        message='Waiting for {} to advance'.format(
-                            conversation.contact.name)))
-        else:
-            buffer_ = str(element)
-            try:
-                next_buffer = conversation.auth_session.advance(buffer_)
-            except AttributeError:
-                conversation.init_auth(buffer_)
-                conversation.ui.notify_in_authentication(
-                    notifications.UnmessageNotification(
-                        title='Authentication started',
-                        message='{} wishes to authenticate '.format(
-                                    conversation.contact.name)))
-            else:
-                if next_buffer:
-                    d = self.peer._send_element(
-                        conversation,
-                        AuthenticationElement(next_buffer))
-                    d.addCallbacks(
-                        lambda args: self.peer._element_parser.parse(*args),
-                        lambda failure: self.peer._notify_error(conversation,
-                                                                failure))
-            if conversation.is_authenticated is None:
-                # the authentication is not complete as buffers are still being
-                # exchanged
-                pass
-            else:
-                if conversation.is_authenticated:
-                    title = 'Authentication successful'
-                    message = 'Your conversation with {} is authenticated!'
-                else:
-                    title = 'Authentication failed'
-                    message = 'Your conversation with {} is NOT authenticated!'
-                conversation.ui.notify_finished_authentication(
-                    notifications.UnmessageNotification(
-                        title=title,
-                        message=message.format(
-                            conversation.contact.name)))
+        join(AuthSession.parse_auth_element(element, conversation))
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:

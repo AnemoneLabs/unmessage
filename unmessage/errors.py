@@ -1,3 +1,6 @@
+from twisted.python.failure import Failure
+
+
 class UnmessageError(Exception):
     def __init__(self, message, title=None):
         super(UnmessageError, self).__init__()
@@ -138,3 +141,11 @@ class VerificationError(UnmessageError):
         super(VerificationError, self).__init__(
             title='Key verification error',
             message="The key provided does not match {}'s!".format(contact))
+
+
+def to_unmessage_error(error):
+    e = error.value if isinstance(error, Failure) else error
+    if isinstance(e, UnmessageError):
+        return e
+    else:
+        return UnmessageError(message=str(e), title=str(type(e)))

@@ -4,15 +4,20 @@ import curses
 import sys
 from curses.textpad import Textbox
 from functools import wraps
-from threading import Event, RLock
+from signal import signal, SIGWINCH
+from threading import RLock
 
 from pyaxo import b2a
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
 from . import peer
 from .log import loggerFor, LogLevel
+from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
 from .ui import ConversationUi, PeerUi
+from .ui import displays_error as _displays_error
+from .ui import displays_result as _displays_result
 
 
 DEFAULT_PREFIX = '>'
@@ -110,12 +115,39 @@ def get_auth_color(conversation):
         return CursesHelper.get_color_pair(RED)
 
 
+def displays_error(f):
+    def display(self, error):
+        self.display_attention(message=str(error),
+                               title=error.title,
+                               error=True)
+    return _displays_error(f, display)
+
+
+def displays_result(f):
+    def display(self, result):
+        if isinstance(result, UnmessageNotification):
+            title = result.title
+        else:
+            title = None
+        self.display_info(message=str(result),
+                          title=title)
+    return _displays_result(f, display)
+
+
 class Cli(PeerUi):
-    def __init__(self):
+    @classmethod
+    def get_conv_established_notification(cls, notification):
+        cmd = '/msg'
+        params = notification.conversation.contact.name + ' <message>'
+        notification.message += ' using "{} {}"'.format(cmd, params)
+        return notification
+
+    def __init__(self, reactor):
+        self.reactor = reactor
+
         self.log = loggerFor(self)
 
         self.help_info = None
-        self.event_stop = Event()
         self.remote_mode = False
 
         self.curses_helper = None
@@ -208,6 +240,7 @@ class Cli(PeerUi):
         window = window or self.curses_helper.output_win
         window.clear()
 
+    @inlineCallbacks
     def start(self, name,
               local_server_ip=None,
               local_server_port=None,
@@ -222,24 +255,38 @@ class Cli(PeerUi):
         if not name:
             print 'unMessage could not find a name to use'
             print 'Run unMessage with `-name`'
-        else:
-            curses.wrapper(self.start_main,
-                           name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
+            return
+
+        self.curses_helper = CursesHelper(ui=self)
+
+        self.display_info(message=APP_NAME,
+                          window=self.curses_helper.header_win, clear=True)
+
+        self.curses_helper.update_input_window(self.prefix)
+        self.reactor.addReader(self)
+
+        try:
+            yield self.init_peer(name,
+                                 local_server_ip,
+                                 local_server_port,
+                                 launch_tor,
+                                 tor_socks_port,
+                                 tor_control_port,
+                                 local_mode)
+        except errors.UnmessageError as e:
+            self.display_attention(e.message, e.title, error=True)
+
+    @inlineCallbacks
+    def before_stop(self):
+        yield self.peer.stop()
 
     def stop(self):
-        self.event_stop.set()
-        self.peer.stop()
-        self.curses_helper.end_curses()
+        self.reactor.stop()
 
     def display_help(self):
         self.display_str(self.help_info)
 
+    @inlineCallbacks
     def init_peer(self, name,
                   local_server_ip,
                   local_server_port,
@@ -247,15 +294,24 @@ class Cli(PeerUi):
                   tor_socks_port,
                   tor_control_port,
                   local_mode):
-        self.peer = Peer(name, self)
-        self.peer.start(local_server_ip,
-                        local_server_port,
-                        launch_tor,
-                        tor_socks_port,
-                        tor_control_port,
-                        local_mode,
-                        begin_log=True,
-                        log_level=LogLevel.debug)
+        self.peer = Peer(name, self.reactor, ui=self)
+        try:
+            notification = yield self.peer.start(local_server_ip,
+                                                 local_server_port,
+                                                 launch_tor,
+                                                 tor_socks_port,
+                                                 tor_control_port,
+                                                 local_mode,
+                                                 begin_log=True,
+                                                 log_level=LogLevel.debug)
+        except Exception as e:
+            self.notify_peer_failed(
+                errors.UnmessageError(title=str(type(e)), message=str(e)))
+        else:
+            self.reactor.addSystemEventTrigger('before',
+                                               'shutdown',
+                                               self.before_stop)
+            self.notify_peer_started(notification)
 
     def load_convs(self):
         for c in self.peer.conversations:
@@ -292,11 +348,10 @@ class Cli(PeerUi):
             b2a(self.peer.identity_keys.pub)))
         self.peer.copy_peer()
 
+    @displays_error
+    @displays_result
     def send_request(self, identity, key):
-        try:
-            self.peer.send_request(identity, key)
-        except errors.InvalidPublicKeyError as e:
-            self.display_attention(e.message, e.title, error=True)
+        return self.peer.send_request(identity, key)
 
     def notify_in_request(self, notification):
         cmd = '/req-accept'
@@ -306,22 +361,18 @@ class Cli(PeerUi):
                 notification.contact.identity),
             notification.title)
 
-    def notify_out_request(self, notification):
-        self.display_info(notification.message,
-                          notification.title)
-
+    @displays_result
     def notify_conv_established(self, notification):
-        conv = notification.conversation
-        cmd = '/msg'
-        self.display_info('{} using "{} {} <message>"'.format(
-                notification.message,
-                cmd,
-                conv.contact.name),
-            notification.title)
-        self.add_conv_handler(conv)
+        self.add_conv_handler(notification.conversation)
+        return Cli.get_conv_established_notification(notification)
 
+    @displays_error
+    @displays_result
+    @inlineCallbacks
     def accept_request(self, identity, new_name=None):
-        self.peer.accept_request(identity, new_name)
+        notification = yield self.peer.accept_request(identity, new_name)
+        self.add_conv_handler(notification.conversation)
+        returnValue(Cli.get_conv_established_notification(notification))
 
     def display_in_reqs(self):
         if self.peer.inbound_requests:
@@ -355,15 +406,15 @@ class Cli(PeerUi):
             self.display_info(
                 'Conversation with {} has been deleted'.format(name))
 
+    @displays_error
+    @inlineCallbacks
     def send_message(self, name, message):
         if len(message):
-            try:
-                conv = self.peer.get_conversation(name)
-            except errors.UnknownContactError as e:
-                self.display_attention(e.message)
-            else:
-                self.active_conv = conv
-                self.peer.send_message(name, message)
+            conv = self.peer.get_conversation(name)
+            self.active_conv = conv
+            yield self.peer.send_message(name, message)
+            handler = self._handlers_conv[name]
+            handler.display_message(message, is_receiving=False)
 
     def send_file(self, name, file_path):
         def file_sent(result):
@@ -407,11 +458,10 @@ class Cli(PeerUi):
                                    message=e.message,
                                    error=True)
 
+    @displays_error
+    @displays_result
     def untalk(self, name, input_device=None, output_device=None):
-        try:
-            self.peer.untalk(name, input_device, output_device)
-        except errors.UnknownContactError as e:
-            self.display_attention(e.message)
+        return self.peer.untalk(name, input_device, output_device)
 
     def display_audio_devices(self):
         devices = self.peer.get_audio_devices()
@@ -450,58 +500,10 @@ class Cli(PeerUi):
                     'started' if enable else 'stopped', name),
                 success=True)
 
+    @displays_error
+    @displays_result
     def authenticate(self, name, secret):
-        try:
-            self.peer.authenticate(name, secret=secret)
-        except errors.UnknownContactError as e:
-            self.display_attention(e.message)
-
-    def start_main(self, stdscr,
-                   name,
-                   local_server_ip,
-                   local_server_port,
-                   launch_tor,
-                   tor_socks_port,
-                   tor_control_port,
-                   local_mode):
-        self.curses_helper = CursesHelper(stdscr, ui=self)
-
-        self.display_info(message=APP_NAME,
-                          window=self.curses_helper.header_win, clear=True)
-
-        try:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
-        except errors.UnmessageError as e:
-            self.display_attention(e.message, e.title, error=True)
-
-        try:
-            while not self.event_stop.isSet():
-                self.curses_helper.update_input_window(self.prefix)
-
-                try:
-                    data = self.curses_helper.read_input()
-                except errors.CursesScreenResizedError:
-                    # re-initialize the windows with new sizes and positions
-                    self.curses_helper.init_windows()
-                else:
-                    command, args = self.parse_data(data)
-                    if command:
-                        if (self.peer.is_running or
-                                command in NOT_RUNNING_COMMANDS):
-                            self.make_call(command, args)
-                        else:
-                            self.display_attention(
-                                'This command can only be called when the '
-                                'peer is running')
-        except KeyboardInterrupt:
-            pass
-        self.stop()
+        return self.peer.authenticate(name, secret=secret)
 
     def notify_bootstrap(self, notification):
         self.display_info(notification.message)
@@ -528,6 +530,26 @@ class Cli(PeerUi):
                                clear=True, error=True)
         self.display_attention(notification.message, notification.title,
                                error=True)
+
+    def doRead(self):
+        textpad = self.curses_helper.textpad
+        ch = textpad.win.getch()
+        if ch:
+            if textpad.do_command(ch):
+                textpad.win.refresh()
+            else:
+                self.gather(textpad)
+
+    def gather(self, textpad):
+        data = textpad.gather().strip()
+        command, args = self.parse_data(data)
+        if command:
+            if self.peer.is_running or command in NOT_RUNNING_COMMANDS:
+                self.make_call(command, args)
+            else:
+                self.display_attention('This command can only be called when '
+                                       'the peer is running')
+        self.curses_helper.update_input_window(self.prefix)
 
     def parse_data(self, data):
         command = args = None
@@ -633,7 +655,7 @@ class Cli(PeerUi):
         self.enable_presence(name)
 
     def call_quit(self):
-        self.event_stop.set()
+        self.stop()
 
     def call_req_accept(self, identity, new_name=None):
         self.accept_request(identity, new_name)
@@ -656,12 +678,30 @@ class Cli(PeerUi):
     def call_untalk(self, name, input_device=None, output_device=None):
         self.untalk(name, input_device, output_device)
 
+    def connectionLost(self, *args, **kwargs):
+        """End curses when the connection to the input reader is lost."""
+        CursesHelper.end_curses()
+
+    def fileno(self):
+        """Return the File Descriptor index used to read input."""
+        return 0
+
+    def logPrefix(self):
+        """Return the log prefix of the input reader."""
+        return 'curses'
+
 
 class _ConversationHandler(ConversationUi):
     def __init__(self, conversation, cli):
         super(_ConversationHandler, self).__init__()
         self.conversation = conversation
         self.cli = cli
+
+    def display_message(self, message, is_receiving):
+        peer = self.conversation.contact.name
+        suffix = RECEIVING_SUFFIX if is_receiving else SENDING_SUFFIX
+        self.cli.display_args_list([[peer, get_auth_color(self.conversation)],
+                                    [suffix + ' ' + message + '\n']])
 
     def update_prefix(self):
         # check if the converstation is active in the UI
@@ -687,19 +727,10 @@ class _ConversationHandler(ConversationUi):
         self.cli.display_info(notification.message, success=True)
 
     def notify_message(self, notification):
-        element = notification.element
-        remote = False
-        if element.sender == self.cli.peer.name:
-            peer = element.receiver
-            suffix = SENDING_SUFFIX
-        else:
-            peer = element.sender
-            suffix = RECEIVING_SUFFIX
-            remote = self.cli.remote_mode
+        is_receiving = notification.element.receiver == self.cli.peer.name
+        remote = self.cli.remote_mode if is_receiving else False
 
-        self.cli.display_args_list([
-            [peer, get_auth_color(self.conversation)],
-            [suffix + ' ' + notification.message + '\n']])
+        self.display_message(notification.message, is_receiving)
 
         if remote:
             msg = notification.message.strip()
@@ -788,7 +819,10 @@ class CursesHelper(object):
 
     @classmethod
     @sync_curses
-    def init_curses(cls, stdscr):
+    def init_curses(cls):
+        stdscr = curses.initscr()
+        cls.stdscr = stdscr
+
         # An attempt to limit the damage from this bug in curses:
         # https://bugs.python.org/issue13051
         # The input textbox is 8 rows high. So assuming a maximum terminal
@@ -796,10 +830,15 @@ class CursesHelper(object):
         # should be smaller than this.
         sys.setrecursionlimit(4096)
 
-        cls.stdscr = stdscr
+        stdscr.keypad(True)
+        stdscr.nodelay(True)
 
+        curses.start_color()
         curses.use_default_colors()
         cls._init_color_pairs()
+
+        curses.noecho()
+        curses.cbreak()
         curses.curs_set(1)
 
     @classmethod
@@ -820,23 +859,25 @@ class CursesHelper(object):
     @classmethod
     @sync_curses
     def end_curses(cls):
-        curses.nocbreak()
-        cls.stdscr.keypad(0)
+        cls.stdscr.keypad(False)
         curses.echo()
+        curses.nocbreak()
         curses.endwin()
 
     @sync_curses
-    def __init__(self, stdscr, ui):
-        CursesHelper.init_curses(stdscr)
+    def __init__(self, ui):
+        CursesHelper.init_curses()
 
         self.input_win = self._create_input_window()
         self.output_win = self._create_output_window()
         self.header_win = self._create_header_window()
 
         self.textpad = None
-        self.textpad_validator = _Validator(self)
 
         self.ui = ui
+
+        # re-initialize the windows with new sizes and positions on resize
+        signal(SIGWINCH, lambda sig, stack: self.init_windows())
 
         self.init_windows()
 
@@ -884,11 +925,8 @@ class CursesHelper(object):
         self.output_win.init()
         self.header_win.init()
 
-        self.textpad = _Textbox(self.input_win, self.ui)
+        self.textpad = _Textbox(self.input_win)
         self.textpad.stripspaces = True
-
-    def read_input(self):
-        return self.textpad.edit(self.textpad_validator.validate).strip()
 
     @sync_curses
     def update_input_window(self, args_list):
@@ -950,29 +988,17 @@ class _Textbox(Textbox, object):
     only requires an <Enter>. This subclass fixes this problem by signalling
     completion on <Enter> as well as ^g. Also, map <Backspace> key to ^h.
     """
-    def __init__(self, win, ui, insert_mode=True):
+    def __init__(self, win, insert_mode=True):
         super(_Textbox, self).__init__(win.curses_window, insert_mode)
-        self.ui = ui
 
     @sync_curses
     def do_command(self, ch):
-        if ch == curses.KEY_RESIZE:
-            raise errors.CursesScreenResizedError()
         if ch == 10:  # Enter
             return 0
         if ch == 127:  # BackSpace
             return 8
 
         return Textbox.do_command(self, ch)
-
-
-class _Validator:
-    def __init__(self, ui):
-        self.ui = ui
-
-    @sync_curses
-    def validate(self, ch):
-        return ch
 
 
 def main(name=None):
@@ -1000,7 +1026,9 @@ def main(name=None):
 
     args = parser.parse_args()
 
-    cli = Cli()
+    from twisted.internet import reactor
+
+    cli = Cli(reactor)
     cli.start(args.name,
               args.local_server_ip,
               args.local_server_port,
@@ -1009,6 +1037,7 @@ def main(name=None):
               args.tor_control_port,
               args.remote_mode,
               args.local_mode)
+    reactor.run()
 
 
 if __name__ == '__main__':

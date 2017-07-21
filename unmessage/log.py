@@ -20,6 +20,7 @@ NAMESPACES = [
     'unmessage.peer._ConversationFactory',
     'unmessage.peer._ConversationProtocol',
     'unmessage.peer.Conversation',
+    'unmessage.peer.ElementParser',
     'unmessage.peer.Introduction',
     'unmessage.peer.Peer',
 ]
