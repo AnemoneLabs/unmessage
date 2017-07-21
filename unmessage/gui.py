@@ -71,6 +71,8 @@ class Gui(Tk.Tk, PeerUi):
 
         self.reactor = reactor
 
+        self.protocol('WM_DELETE_WINDOW', self.stop)
+
         self.calls_queue = Queue.Queue()
         self.title(APP_NAME)
         self.peer = None
