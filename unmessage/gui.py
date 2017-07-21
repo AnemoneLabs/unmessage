@@ -262,11 +262,14 @@ class Gui(Tk.Tk, PeerUi):
 
     @inlineCallbacks
     def stop(self):
-        try:
-            yield self.peer.stop()
-        except AttributeError:
+        if self.peer is None:
             # the user never initialized a peer
             pass
+        else:
+            try:
+                yield self.peer.stop()
+            except:
+                pass
         self.reactor.stop()
 
 
