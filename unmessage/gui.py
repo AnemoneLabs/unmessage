@@ -103,7 +103,7 @@ class Gui(Tk.Tk, PeerUi):
                                   command=self.copy_peer)
         self.menu_bar.add_command(label='Copy Onion', state=Tk.DISABLED,
                                   command=self.copy_onion)
-        self.menu_bar.add_command(label='Quit', command=self.quit)
+        self.menu_bar.add_command(label='Quit', command=self.stop)
         self.config(menu=self.menu_bar)
 
         if name:
@@ -261,7 +261,7 @@ class Gui(Tk.Tk, PeerUi):
         self.peer.copy_onion()
 
     @inlineCallbacks
-    def quit(self):
+    def stop(self):
         try:
             yield self.peer.stop()
         except AttributeError:
