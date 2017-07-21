@@ -277,11 +277,13 @@ class Cli(PeerUi):
             self.display_attention(e.message, e.title, error=True)
 
     @inlineCallbacks
-    def stop(self):
+    def before_stop(self):
         try:
             yield self.peer.stop()
         except:
             pass
+
+    def stop(self):
         self.reactor.stop()
 
     def display_help(self):
@@ -309,6 +311,9 @@ class Cli(PeerUi):
             self.notify_peer_failed(
                 errors.UnmessageError(title=str(type(e)), message=str(e)))
         else:
+            self.reactor.addSystemEventTrigger('before',
+                                               'shutdown',
+                                               self.before_stop)
             self.notify_peer_started(notification)
 
     def load_convs(self):

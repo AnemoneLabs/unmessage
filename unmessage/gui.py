@@ -155,6 +155,9 @@ class Gui(Tk.Tk, PeerUi):
             self.notify_peer_failed(
                 errors.UnmessageError(title=str(type(e)), message=str(e)))
         else:
+            self.reactor.addSystemEventTrigger('before',
+                                               'shutdown',
+                                               self.before_stop)
             self.notify_peer_started(notification)
 
     @threadsafe
@@ -261,7 +264,7 @@ class Gui(Tk.Tk, PeerUi):
         self.peer.copy_onion()
 
     @inlineCallbacks
-    def stop(self):
+    def before_stop(self):
         if self.peer is None:
             # the user never initialized a peer
             pass
@@ -270,6 +273,8 @@ class Gui(Tk.Tk, PeerUi):
                 yield self.peer.stop()
             except:
                 pass
+
+    def stop(self):
         self.reactor.stop()
 
 
