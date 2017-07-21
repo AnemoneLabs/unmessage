@@ -69,8 +69,7 @@ class Peer(object):
     state_stopped = 'stopped'
 
     _peer_name = attr.ib(validator=raise_invalid_name)
-    _twisted_reactor = attr.ib(
-        validator=attr.validators.instance_of(ReactorBase))
+    _reactor = attr.ib(validator=attr.validators.instance_of(ReactorBase))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
@@ -321,14 +320,14 @@ class Peer(object):
 
     def _connect(self, address):
         if self._local_mode:
-            point = TCP4ClientEndpoint(self._twisted_reactor,
+            point = TCP4ClientEndpoint(self._reactor,
                                        host=HOST, port=address.port)
 
         else:
             point = TorClientEndpoint(address.host, address.port,
                                       socks_hostname=HOST,
                                       socks_port=self._port_tor_socks,
-                                      reactor=self._twisted_reactor)
+                                      reactor=self._reactor)
 
         return connectProtocol(point,
                                _ConversationProtocol(self._twisted_factory))
@@ -641,7 +640,7 @@ class Peer(object):
         self._notify_bootstrap('Configuring local server')
 
         self._twisted_server_endpoint = TCP4ServerEndpoint(
-            self._twisted_reactor,
+            self._reactor,
             self._port_local_server,
             interface=self._ip_local_server)
 
@@ -668,17 +667,17 @@ class Peer(object):
                 self._notify_bootstrap('{}%: {}'.format(prog, summary))
 
             self._tor = yield txtorcon.launch(
-                self._twisted_reactor,
+                self._reactor,
                 progress_updates=display_bootstrap_lines,
                 data_directory=self._path_tor_data_dir,
                 socks_port=self._port_tor_socks)
         else:
             self._notify_bootstrap('Connecting to existing Tor')
 
-            endpoint = TCP4ClientEndpoint(self._twisted_reactor,
+            endpoint = TCP4ClientEndpoint(self._reactor,
                                           HOST,
                                           self._port_tor_control)
-            self._tor = yield txtorcon.connect(self._twisted_reactor, endpoint)
+            self._tor = yield txtorcon.connect(self._reactor, endpoint)
 
         self._notify_bootstrap('Controlling Tor process')
 
