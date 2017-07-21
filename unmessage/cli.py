@@ -278,10 +278,7 @@ class Cli(PeerUi):
 
     @inlineCallbacks
     def before_stop(self):
-        try:
-            yield self.peer.stop()
-        except:
-            pass
+        yield self.peer.stop()
 
     def stop(self):
         self.reactor.stop()

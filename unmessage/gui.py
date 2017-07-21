@@ -271,10 +271,7 @@ class Gui(Tk.Tk, PeerUi):
             # the user never initialized a peer
             pass
         else:
-            try:
-                yield self.peer.stop()
-            except:
-                pass
+            yield self.peer.stop()
 
     def stop(self):
         self.reactor.stop()
