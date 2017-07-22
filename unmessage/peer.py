@@ -508,9 +508,14 @@ class Peer(object):
                                        payload=element.serialize())
 
         manager = yield self._get_active_manager(element, conv)
-        result = yield self._send_packet(packet, manager, conv, handshake_key)
+        yield self._send_packet(packet, manager, conv, handshake_key)
+        partial = self._process_element_packet(
+            packet,
+            conv,
+            sender=self.name,
+            receiver=conv.contact.name)
 
-        returnValue(result)
+        returnValue((partial, conv))
 
     @inlineCallbacks
     def _get_active_manager(self, element, conversation):
@@ -573,12 +578,7 @@ class Peer(object):
         # pack the ``RegularPacket`` into a ``str`` and send it
         yield manager.send_data(str(reg_packet))
 
-        element = self._process_element_packet(
-            packet,
-            conversation,
-            sender=self.name,
-            receiver=conversation.contact.name)
-        returnValue((element, conversation))
+        returnValue(reg_packet)
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
