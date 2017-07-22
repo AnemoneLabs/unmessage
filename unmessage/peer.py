@@ -570,27 +570,15 @@ class Peer(object):
         """
         reg_packet = self._encrypt(packet, conversation, handshake_key)
 
-        try:
-            # pack the ``RegularPacket`` into a ``str`` and send it
-            yield manager.send_data(str(reg_packet))
-        except Exception as e:
-            # TODO handle remaining packets and close the conversation
-            # somewhere else
-            conversation.close()
+        # pack the ``RegularPacket`` into a ``str`` and send it
+        yield manager.send_data(str(reg_packet))
 
-            error = errors.ConnectionLostError(conversation.contact.name)
-            error.title += ' - ' + str(type(e))
-            if error.message:
-                error.message += ' - ' + e.message
-
-            raise Failure(error)
-        else:
-            element = self._process_element_packet(
-                packet,
-                conversation,
-                sender=self.name,
-                receiver=conversation.contact.name)
-            returnValue((element, conversation))
+        element = self._process_element_packet(
+            packet,
+            conversation,
+            sender=self.name,
+            receiver=conversation.contact.name)
+        returnValue((element, conversation))
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
