@@ -504,6 +504,9 @@ class Peer(object):
             - Split the element into multiple packets if needed
             - Maybe use a ``DeferredList``
         """
+        element.sender = self.name
+        element.receiver = conv.contact.name
+
         packet = packets.ElementPacket(element.type_,
                                        payload=element.serialize())
 
@@ -512,8 +515,8 @@ class Peer(object):
         partial = self._process_element_packet(
             packet,
             conv,
-            sender=self.name,
-            receiver=conv.contact.name)
+            sender=element.sender,
+            receiver=element.receiver)
 
         returnValue((partial, conv))
 
