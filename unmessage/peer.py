@@ -175,7 +175,7 @@ class Peer(object):
         try:
             onion_domain = self._onion_service.hostname
         except AttributeError:
-            onion_domain = 'hostname-not-found'
+            onion_domain = 'hostnamenotfound.onion'
         return Address(onion_domain, self._port_local_server)
 
     @property
