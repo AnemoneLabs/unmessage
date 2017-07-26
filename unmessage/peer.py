@@ -114,6 +114,36 @@ class Peer(object):
         self._element_parser = ElementParser(self)
         self._state = Peer.state_created
 
+    @classmethod
+    def from_disk(cls, name, reactor, ui=None,
+                  begin_log=False, begin_log_std=False, log_level=None):
+        peer = Peer(name, reactor) if ui is None else Peer(name, reactor, ui)
+
+        peer._create_peer_dir()
+
+        if begin_log:
+            if log_level is None:
+                begin_logging(peer.path_log_file, begin_std=begin_log_std)
+            else:
+                begin_logging(peer.path_log_file, log_level, begin_log_std)
+
+        peer._load_peer_info()
+
+        peer._update_config()
+
+        peer._axolotl = Axolotl(name=peer.name,
+                                dbname=peer._path_axolotl_db,
+                                dbpassphrase=None,
+                                nonthreaded_sql=False)
+        if not peer.identity_keys:
+            peer._identity_keys = pyaxo.generate_keypair()
+
+        peer._conversations = peer._load_conversations()
+        for c in peer.conversations:
+            c.start()
+
+        return peer
+
     @property
     def _path_peer_dir(self):
         return os.path.join(APP_DIR, self.name)
@@ -911,26 +941,12 @@ class Peer(object):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              local_mode=False,
-              begin_log=False,
-              begin_log_std=False,
-              log_level=None):
+              local_mode=False):
         self._notify_bootstrap('Starting peer')
 
         if local_mode:
             launch_tor = False
             self._local_mode = local_mode
-
-        self._create_peer_dir()
-
-        if begin_log:
-            if log_level is None:
-                begin_logging(self.path_log_file, begin_std=begin_log_std)
-            else:
-                begin_logging(self.path_log_file, log_level, begin_log_std)
-
-        self._load_peer_info()
-        self._update_config()
 
         if local_server_ip:
             self._ip_local_server = local_server_ip
@@ -944,17 +960,6 @@ class Peer(object):
         yield self._start_server(launch_tor)
 
         self._notify_bootstrap('Peer started')
-
-        self._axolotl = Axolotl(name=self.name,
-                                dbname=self._path_axolotl_db,
-                                dbpassphrase=None,
-                                nonthreaded_sql=False)
-        if not self.identity_keys:
-            self._identity_keys = pyaxo.generate_keypair()
-
-        self._conversations = self._load_conversations()
-        for c in self.conversations:
-            c.start()
 
         self._state = Peer.state_running
 
