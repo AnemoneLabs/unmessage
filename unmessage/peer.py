@@ -37,7 +37,7 @@ from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
 from .log import begin_logging, loggerFor
 from .ui import ConversationUi, PeerUi
-from .utils import fork, join, Address
+from .utils import fork, join, default_factory_attrib, Paths, Address
 from .utils import is_valid_identity, is_valid_file_name
 from .utils import raise_if_not, raise_invalid_name, raise_invalid_shared_key
 from .smp import SMP
@@ -75,6 +75,7 @@ class Peer(object):
             attr.validators.instance_of(PeerUi)),
         default=attr.Factory(PeerUi))
 
+    _paths = attr.ib(init=False)
     _info = attr.ib(init=False)
     _persistence = attr.ib(init=False)
     _axolotl = attr.ib(init=False, default=None)
@@ -110,7 +111,8 @@ class Peer(object):
 
         self._info = PeerInfo(port_local_server=PORT)
         self._name = self._peer_name
-        self._persistence = Persistence(dbname=self._path_peer_db)
+        self._paths = PeerPaths(APP_DIR, self._name)
+        self._persistence = Persistence(dbname=self._paths.peer_db)
         self._element_parser = ElementParser(self)
         self._state = Peer.state_created
 
@@ -123,16 +125,16 @@ class Peer(object):
 
         if begin_log:
             if log_level is None:
-                begin_logging(peer.path_log_file, begin_std=begin_log_std)
+                begin_logging(peer._paths.log_file, begin_std=begin_log_std)
             else:
-                begin_logging(peer.path_log_file, log_level, begin_log_std)
+                begin_logging(peer._paths.log_file, log_level, begin_log_std)
 
         peer._load_peer_info()
 
         peer._update_config()
 
         peer._axolotl = Axolotl(name=peer.name,
-                                dbname=peer._path_axolotl_db,
+                                dbname=peer._paths.axolotl_db,
                                 dbpassphrase=None,
                                 nonthreaded_sql=False)
         if not peer.identity_keys:
@@ -143,34 +145,6 @@ class Peer(object):
             c.start()
 
         return peer
-
-    @property
-    def _path_peer_dir(self):
-        return os.path.join(APP_DIR, self.name)
-
-    @property
-    def _path_peer_db(self):
-        return os.path.join(self._path_peer_dir, 'peer.db')
-
-    @property
-    def _path_axolotl_db(self):
-        return os.path.join(self._path_peer_dir, 'axolotl.db')
-
-    @property
-    def _path_tor_dir(self):
-        return os.path.join(self._path_peer_dir, 'tor')
-
-    @property
-    def _path_tor_data_dir(self):
-        return os.path.join(self._path_tor_dir, 'data')
-
-    @property
-    def path_log_file(self):
-        return os.path.join(self._path_peer_dir, 'peer.log')
-
-    @property
-    def path_conversations_dir(self):
-        return os.path.join(self._path_peer_dir, 'conversations')
 
     @property
     def _contacts(self):
@@ -265,15 +239,15 @@ class Peer(object):
                 errors.UnmessageError(failure.getErrorMessage()))
 
     def _create_peer_dir(self):
-        if not os.path.exists(self._path_peer_dir):
-            os.makedirs(self._path_peer_dir)
-        if not os.path.exists(self.path_conversations_dir):
-            os.makedirs(self.path_conversations_dir)
-        if not os.path.exists(self._path_tor_dir):
-            os.makedirs(self._path_tor_dir)
+        if not os.path.exists(self._paths.base):
+            os.makedirs(self._paths.base)
+        if not os.path.exists(self._paths.conversations_dir):
+            os.makedirs(self._paths.conversations_dir)
+        if not os.path.exists(self._paths.tor_dir.base):
+            os.makedirs(self._paths.tor_dir.base)
 
     def _load_peer_info(self):
-        if os.path.exists(self._path_peer_db):
+        if os.path.exists(self._paths.peer_db):
             self._info = self._persistence.load_peer_info()
 
     def _update_config(self):
@@ -695,7 +669,7 @@ class Peer(object):
             self._tor = yield txtorcon.launch(
                 self._reactor,
                 progress_updates=display_bootstrap_lines,
-                data_directory=self._path_tor_data_dir,
+                data_directory=self._paths.tor_data_dir,
                 socks_port=self._port_tor_socks)
         else:
             self._notify_bootstrap('Connecting to existing Tor')
@@ -1147,6 +1121,8 @@ class Conversation(object):
         default=None)
     connection = attr.ib(default=None)
 
+    _paths = attr.ib(init=False)
+
     axolotl_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
     ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
@@ -1171,6 +1147,9 @@ class Conversation(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
+        self._paths = ConversationPaths(self.peer._paths.conversations_dir,
+                                        self.contact.name)
+
         self.thread_in_data = Thread(target=self.check_in_data)
         self.thread_in_data.daemon = True
         self.thread_out_data = Thread(target=self.check_out_data)
@@ -1207,11 +1186,6 @@ class Conversation(object):
             return None
 
     @property
-    def path_dir(self):
-        return os.path.join(self.peer.path_conversations_dir,
-                            self.contact.name)
-
-    @property
     def file_session(self):
         return self._get_manager(FileSession.type_)
 
@@ -1241,8 +1215,8 @@ class Conversation(object):
         del self._managers[manager.type_]
 
     def create_dir(self):
-        if not os.path.exists(self.path_dir):
-            os.makedirs(self.path_dir)
+        if not os.path.exists(self._paths.base):
+            os.makedirs(self._paths.base)
 
     def check_in_data(self):
         while True:
@@ -1554,12 +1528,12 @@ class FileSession(object):
                 'Unexpected FileElement received without an active manager')
 
     @property
-    def queue_in_data(self):
-        return self.conversation.queue_in_data
+    def _paths(self):
+        return self.conversation._paths.file_transfer_dir
 
     @property
-    def path_dir(self):
-        return os.path.join(self.conversation.path_dir, 'file-transfer')
+    def queue_in_data(self):
+        return self.conversation.queue_in_data
 
     def send_data(self, data):
         return fork(self.connection.send, data)
@@ -1574,11 +1548,11 @@ class FileSession(object):
 
     def create_dir(self):
         self.conversation.create_dir()
-        if not os.path.exists(self.path_dir):
-            os.makedirs(self.path_dir)
+        if not os.path.exists(self._paths.base):
+            os.makedirs(self._paths.base)
 
     def get_default_file_path(self, file_name):
-        return os.path.join(self.path_dir, file_name)
+        return self._paths.join(file_name)
 
     @inlineCallbacks
     def send_request(self, file_path):
@@ -1842,6 +1816,28 @@ def get_manager_class(element):
                 if type(element) in manager_class.element_classes][0]
     except IndexError:
         return errors.ManagerNotFoundError(type(element))
+
+
+@attr.s
+class PeerPaths(Paths):
+    peer_db = default_factory_attrib(
+        lambda self: self.join('peer.db'))
+    axolotl_db = default_factory_attrib(
+        lambda self: self.join('axolotl.db'))
+    tor_dir = default_factory_attrib(
+        lambda self: self.to_new('tor'))
+    tor_data_dir = default_factory_attrib(
+        lambda self: self.tor_dir.join('data'))
+    log_file = default_factory_attrib(
+        lambda self: self.join('peer.log'))
+    conversations_dir = default_factory_attrib(
+        lambda self: self.join('conversations'))
+
+
+@attr.s
+class ConversationPaths(Paths):
+    file_transfer_dir = default_factory_attrib(
+        lambda self: self.to_new('file-transfer'))
 
 
 @attr.s
