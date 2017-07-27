@@ -165,10 +165,6 @@ class Peer(object):
         return os.path.join(self._path_tor_dir, 'data')
 
     @property
-    def _path_onion_service_dir(self):
-        return os.path.join(self._path_tor_dir, 'onion-service')
-
-    @property
     def path_log_file(self):
         return os.path.join(self._path_peer_dir, 'peer.log')
 
