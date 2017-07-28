@@ -121,7 +121,7 @@ class Peer(object):
                   begin_log=False, begin_log_std=False, log_level=None):
         peer = Peer(name, reactor) if ui is None else Peer(name, reactor, ui)
 
-        peer._create_peer_dir()
+        cls.create_peer_dir(peer._paths)
 
         if begin_log:
             if log_level is None:
@@ -145,6 +145,15 @@ class Peer(object):
             c.start()
 
         return peer
+
+    @classmethod
+    def create_peer_dir(cls, paths):
+        if not os.path.exists(paths.base):
+            os.makedirs(paths.base)
+        if not os.path.exists(paths.conversations_dir):
+            os.makedirs(paths.conversations_dir)
+        if not os.path.exists(paths.tor_dir.base):
+            os.makedirs(paths.tor_dir.base)
 
     @property
     def _contacts(self):
@@ -237,14 +246,6 @@ class Peer(object):
         else:
             conv.ui.notify_error(
                 errors.UnmessageError(failure.getErrorMessage()))
-
-    def _create_peer_dir(self):
-        if not os.path.exists(self._paths.base):
-            os.makedirs(self._paths.base)
-        if not os.path.exists(self._paths.conversations_dir):
-            os.makedirs(self._paths.conversations_dir)
-        if not os.path.exists(self._paths.tor_dir.base):
-            os.makedirs(self._paths.tor_dir.base)
 
     def _load_peer_info(self):
         if os.path.exists(self._paths.peer_db):
