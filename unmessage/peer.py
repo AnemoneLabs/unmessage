@@ -119,7 +119,10 @@ class Peer(object):
     @classmethod
     def from_disk(cls, name, reactor, ui=None,
                   begin_log=False, begin_log_std=False, log_level=None):
-        peer = Peer(name, reactor) if ui is None else Peer(name, reactor, ui)
+        kwargs = dict()
+        if ui is not None:
+            kwargs['ui'] = ui
+        peer = Peer(name, reactor, **kwargs)
 
         cls.create_peer_dir(peer._paths)
 
