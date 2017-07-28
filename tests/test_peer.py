@@ -6,11 +6,10 @@ from unmessage.peer import Peer, ConversationPaths, PeerPaths
 
 
 @pytest.inlineCallbacks
-def test_start_stop(reactor):
-    peer = Peer.from_disk('pytest', reactor)
-    notification = yield peer.start(local_mode=True)
+def test_start_stop(peer_a):
+    notification = yield peer_a.start(local_mode=True)
     assert str(notification) == 'Peer started'
-    yield peer.stop()
+    yield peer_a.stop()
 
 
 def test_peer_paths():

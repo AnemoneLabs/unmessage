@@ -5,10 +5,7 @@ from unmessage.peer import Peer
 
 
 @pytest.inlineCallbacks
-def test_conversation_request(reactor):
-    peer_a = Peer.from_disk('pytest-a', reactor)
-    peer_b = Peer.from_disk('pytest-b', reactor)
-
+def test_conversation_request(peer_a, peer_b):
     yield peer_a.start(local_mode=True, local_server_port=12887)
     yield peer_b.start(local_mode=True, local_server_port=13887)
 
