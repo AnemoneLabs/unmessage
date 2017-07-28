@@ -129,7 +129,9 @@ class Peer(object):
             else:
                 begin_logging(peer._paths.log_file, log_level, begin_log_std)
 
-        peer._load_peer_info()
+        info = cls.load_peer_info(peer._persistence, peer._paths)
+        if info:
+            peer._info = info
 
         peer._update_config()
 
@@ -154,6 +156,11 @@ class Peer(object):
             os.makedirs(paths.conversations_dir)
         if not os.path.exists(paths.tor_dir.base):
             os.makedirs(paths.tor_dir.base)
+
+    @classmethod
+    def load_peer_info(cls, persistence, paths):
+        if os.path.exists(paths.peer_db):
+            return persistence.load_peer_info()
 
     @property
     def _contacts(self):
@@ -246,10 +253,6 @@ class Peer(object):
         else:
             conv.ui.notify_error(
                 errors.UnmessageError(failure.getErrorMessage()))
-
-    def _load_peer_info(self):
-        if os.path.exists(self._paths.peer_db):
-            self._info = self._persistence.load_peer_info()
 
     def _update_config(self):
         if not CONFIG.has_section('unMessage'):
