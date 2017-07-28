@@ -147,6 +147,18 @@ class Peer(object):
 
         self._name = self._peer_name
         self._element_parser = ElementParser(self)
+
+        self._axolotl = Axolotl(name=self.name,
+                                dbname=self._paths.axolotl_db,
+                                dbpassphrase=None,
+                                nonthreaded_sql=False)
+        if self.identity_keys is None:
+            self._identity_keys = pyaxo.generate_keypair()
+
+        self._conversations = self._load_conversations()
+        for c in self.conversations:
+            c.start()
+
         self._state = Peer.state_created
 
     @classmethod
@@ -173,17 +185,6 @@ class Peer(object):
                 begin_logging(peer._paths.log_file, log_level, begin_log_std)
 
         peer._update_config()
-
-        peer._axolotl = Axolotl(name=peer.name,
-                                dbname=peer._paths.axolotl_db,
-                                dbpassphrase=None,
-                                nonthreaded_sql=False)
-        if not peer.identity_keys:
-            peer._identity_keys = pyaxo.generate_keypair()
-
-        peer._conversations = peer._load_conversations()
-        for c in peer.conversations:
-            c.start()
 
         return peer
 
