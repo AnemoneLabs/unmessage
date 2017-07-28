@@ -63,6 +63,32 @@ TOR_CONTROL_PORT = 9055
 
 
 @attr.s
+class PeerPaths(Paths):
+    @classmethod
+    def create(cls, name, base=APP_DIR):
+        return cls(base, name)
+
+    peer_db = default_factory_attrib(
+        lambda self: self.join('peer.db'))
+    axolotl_db = default_factory_attrib(
+        lambda self: self.join('axolotl.db'))
+    tor_dir = default_factory_attrib(
+        lambda self: self.to_new('tor'))
+    tor_data_dir = default_factory_attrib(
+        lambda self: self.tor_dir.join('data'))
+    log_file = default_factory_attrib(
+        lambda self: self.join('peer.log'))
+    conversations_dir = default_factory_attrib(
+        lambda self: self.join('conversations'))
+
+
+@attr.s
+class ConversationPaths(Paths):
+    file_transfer_dir = default_factory_attrib(
+        lambda self: self.to_new('file-transfer'))
+
+
+@attr.s
 class Peer(object):
     state_created = 'created'
     state_running = 'running'
@@ -70,12 +96,16 @@ class Peer(object):
 
     _peer_name = attr.ib(validator=raise_invalid_name)
     _reactor = attr.ib(validator=attr.validators.instance_of(ReactorBase))
+    _paths = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerPaths)),
+        default=attr.Factory(lambda self: PeerPaths.create(self._peer_name),
+                             takes_self=True))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
         default=attr.Factory(PeerUi))
 
-    _paths = attr.ib(init=False)
     _info = attr.ib(init=False)
     _persistence = attr.ib(init=False)
     _axolotl = attr.ib(init=False, default=None)
@@ -111,7 +141,6 @@ class Peer(object):
 
         self._info = PeerInfo(port_local_server=PORT)
         self._name = self._peer_name
-        self._paths = PeerPaths(APP_DIR, self._name)
         self._persistence = Persistence(dbname=self._paths.peer_db)
         self._element_parser = ElementParser(self)
         self._state = Peer.state_created
@@ -119,12 +148,14 @@ class Peer(object):
     @classmethod
     def from_disk(cls, name, reactor, ui=None,
                   begin_log=False, begin_log_std=False, log_level=None):
-        kwargs = dict()
+        paths = PeerPaths.create(name)
+
+        cls.create_peer_dir(paths)
+
+        kwargs = {'paths': paths}
         if ui is not None:
             kwargs['ui'] = ui
         peer = Peer(name, reactor, **kwargs)
-
-        cls.create_peer_dir(peer._paths)
 
         if begin_log:
             if log_level is None:
@@ -1823,28 +1854,6 @@ def get_manager_class(element):
                 if type(element) in manager_class.element_classes][0]
     except IndexError:
         return errors.ManagerNotFoundError(type(element))
-
-
-@attr.s
-class PeerPaths(Paths):
-    peer_db = default_factory_attrib(
-        lambda self: self.join('peer.db'))
-    axolotl_db = default_factory_attrib(
-        lambda self: self.join('axolotl.db'))
-    tor_dir = default_factory_attrib(
-        lambda self: self.to_new('tor'))
-    tor_data_dir = default_factory_attrib(
-        lambda self: self.tor_dir.join('data'))
-    log_file = default_factory_attrib(
-        lambda self: self.join('peer.log'))
-    conversations_dir = default_factory_attrib(
-        lambda self: self.join('conversations'))
-
-
-@attr.s
-class ConversationPaths(Paths):
-    file_transfer_dir = default_factory_attrib(
-        lambda self: self.to_new('file-transfer'))
 
 
 @attr.s
