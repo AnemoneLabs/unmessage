@@ -38,6 +38,10 @@ class Persistence(object):
     def __attrs_post_init__(self):
         self.db = self._open_db()
 
+    @classmethod
+    def create(cls, paths):
+        return cls(paths.peer_db)
+
     def _open_db(self):
         db = sqlite3.connect(':memory:', check_same_thread=False)
         db.row_factory = sqlite3.Row

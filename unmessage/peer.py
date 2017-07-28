@@ -100,13 +100,20 @@ class Peer(object):
             attr.validators.instance_of(PeerPaths)),
         default=attr.Factory(lambda self: PeerPaths.create(self._peer_name),
                              takes_self=True))
+    _persistence = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Persistence)),
+        default=attr.Factory(lambda self: Persistence.create(self._paths),
+                             takes_self=True))
+    _info = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerInfo)),
+        default=attr.Factory(lambda: PeerInfo(port_local_server=PORT)))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
         default=attr.Factory(PeerUi))
 
-    _info = attr.ib(init=False)
-    _persistence = attr.ib(init=False)
     _axolotl = attr.ib(init=False, default=None)
     _conversations = attr.ib(init=False, default=attr.Factory(dict))
     _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
@@ -138,9 +145,7 @@ class Peer(object):
     def __attrs_post_init__(self):
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
-        self._info = PeerInfo(port_local_server=PORT)
         self._name = self._peer_name
-        self._persistence = Persistence(dbname=self._paths.peer_db)
         self._element_parser = ElementParser(self)
         self._state = Peer.state_created
 
@@ -150,8 +155,13 @@ class Peer(object):
         paths = PeerPaths.create(name)
 
         cls.create_peer_dir(paths)
+        persistence = Persistence.create(paths)
+        info = cls.load_peer_info(persistence, paths)
 
-        kwargs = {'paths': paths}
+        kwargs = {'paths': paths,
+                  'persistence': persistence}
+        if info is not None:
+            kwargs['info'] = info
         if ui is not None:
             kwargs['ui'] = ui
         peer = Peer(name, reactor, **kwargs)
@@ -161,10 +171,6 @@ class Peer(object):
                 begin_logging(peer._paths.log_file, begin_std=begin_log_std)
             else:
                 begin_logging(peer._paths.log_file, log_level, begin_log_std)
-
-        info = cls.load_peer_info(peer._persistence, peer._paths)
-        if info:
-            peer._info = info
 
         peer._update_config()
 
