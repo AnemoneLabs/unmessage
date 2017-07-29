@@ -797,7 +797,7 @@ class Peer(object):
             returnValue(notification)
 
     @inlineCallbacks
-    def _accept_request(self, request, new_name):
+    def _accept_request(self, request, new_name=None):
         conv = request.conversation
 
         if new_name:
