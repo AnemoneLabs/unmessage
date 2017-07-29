@@ -13,6 +13,7 @@ from zope.interface import provider
 LOG_LEVEL = LogLevel.warn
 
 NAMESPACES = [
+    'pytest',
     'unmessage.__main__',
     'unmessage.cli.Cli',
     'unmessage.gui.Gui',

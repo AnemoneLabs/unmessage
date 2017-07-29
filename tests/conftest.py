@@ -1,6 +1,7 @@
 import pytest
 
 from unmessage.peer import Peer
+from unmessage.log import begin_logging, Logger, LogLevel
 
 
 @pytest.fixture(scope='session')
@@ -17,3 +18,9 @@ def peer_a(reactor):
 @pytest.fixture()
 def peer_b(reactor):
     return Peer('pytest-b', reactor)
+
+
+@pytest.fixture(scope='session')
+def log():
+    begin_logging('/tmp/unmessage.log', LogLevel.debug)
+    return Logger('pytest')
