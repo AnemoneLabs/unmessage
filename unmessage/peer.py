@@ -103,8 +103,7 @@ class Peer(object):
     _persistence = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(Persistence)),
-        default=attr.Factory(lambda self: Persistence.create(self._paths),
-                             takes_self=True))
+        default=None)
     _info = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerInfo)),
@@ -270,6 +269,10 @@ class Peer(object):
     @property
     def outbound_requests(self):
         return self._outbound_requests.values()
+
+    @property
+    def has_persistence(self):
+        return self._persistence is not None
 
     @property
     def is_running(self):
@@ -466,7 +469,8 @@ class Peer(object):
             ratchet_key=ratchet_keys.pub,
             other_ratchet_key=other_ratchet_key,
             mode=mode)
-        axolotl.save()
+        if self.has_persistence:
+            axolotl.save()
 
         conv.axolotl = axolotl
         conv.state = Conversation.state_conv
@@ -650,7 +654,8 @@ class Peer(object):
 
         with conversation.axolotl_lock:
             ciphertext = conversation.axolotl.encrypt(plaintext)
-            conversation.axolotl.save()
+            if self.has_persistence:
+                conversation.axolotl.save()
 
         if handshake_key:
             packet_type = packets.ReplyPacket
@@ -674,7 +679,8 @@ class Peer(object):
         if payload_hash == a2b(packet.payload_hash):
             with conversation.axolotl_lock:
                 plaintext = conversation.axolotl.decrypt(ciphertext)
-                conversation.axolotl.save()
+                if self.has_persistence:
+                    conversation.axolotl.save()
             return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
@@ -986,7 +992,8 @@ class Peer(object):
     def stop(self):
         self.log.info('Stopping peer')
 
-        self._save_peer_info()
+        if self.has_persistence:
+            self._save_peer_info()
 
         yield self._send_offline_presence()
 
