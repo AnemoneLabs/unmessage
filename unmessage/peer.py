@@ -1272,26 +1272,7 @@ class Conversation(object):
     def check_in_data(self):
         while True:
             data, connection = self.queue_in_data.get()
-            try:
-                method = getattr(self, 'handle_{}_data'.format(self.state))
-            except AttributeError:
-                # the state does not have a "handle" method, which currently is
-                # state_in_req because it should be waiting for the request to
-                # be accepted (by the user) and meanwhile no more data should
-                # be received from the other party
-                # TODO maybe disconnect instead of ignoring the data
-                self.log.warn('Failed to find the handle method for state: '
-                              '{state}', state=self.state)
-            except (errors.MalformedPacketError,
-                    errors.CorruptedPacketError) as e:
-                e.title += ' caused by "{}"'.format(self.contact.name)
-                self.peer._ui.notify_error(e)
-            else:
-                self.log.debug(
-                    'Handling data with {method.__name__} for state: {state}',
-                    method=method, state=self.state)
-
-                method(data, connection)
+            self.receive_data(data, connection)
 
     def check_out_data(self):
         while True:
@@ -1313,6 +1294,27 @@ class Conversation(object):
         d = Deferred()
         self.queue_out_data.put((data, d))
         return d
+
+    def receive_data(self, data, connection=None):
+        try:
+            method = getattr(self, 'handle_{}_data'.format(self.state))
+        except AttributeError:
+            # the state does not have a "handle" method, which currently is
+            # state_in_req because it should be waiting for the request to
+            # be accepted (by the user) and meanwhile no more data should
+            # be received from the other party
+            # TODO maybe disconnect instead of ignoring the data
+            self.log.warn('Failed to find the handle method for state: '
+                          '{state}', state=self.state)
+        except (errors.MalformedPacketError,
+                errors.CorruptedPacketError) as e:
+            e.title += ' caused by "{}"'.format(self.contact.name)
+            self.peer._ui.notify_error(e)
+        else:
+            self.log.debug(
+                'Handling data with {method.__name__} for state: {state}',
+                method=method, state=self.state)
+            method(data, connection)
 
     def handle_conv_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
