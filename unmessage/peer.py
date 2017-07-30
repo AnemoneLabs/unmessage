@@ -1075,7 +1075,7 @@ class Introduction(Thread):
         super(Introduction, self).__init__()
         self.daemon = True
 
-        self.queue_in_data = Queue()
+        self.receive_data_lock = Lock()
 
         self.peer = peer
         self.connection = connection
@@ -1084,20 +1084,20 @@ class Introduction(Thread):
 
         self.log = loggerFor(self)
 
-    def run(self):
-        data, _ = self.queue_in_data.get()
-        try:
-            self.receive_data(data)
-        except (errors.MalformedPacketError,
-                errors.CorruptedPacketError,
-                errors.InvalidIdentityError,
-                errors.InvalidPublicKeyError) as e:
-            e.title += ' caused by an unknown peer'
-            self.log.error(Failure(e).getTraceback())
-            self.peer._ui.notify_error(e)
-            self.connection.remove_manager()
+    def receive_data(self, data, connection=None):
+        with self.receive_data_lock:
+            try:
+                self._receive_data(data, connection)
+            except (errors.MalformedPacketError,
+                    errors.CorruptedPacketError,
+                    errors.InvalidIdentityError,
+                    errors.InvalidPublicKeyError) as e:
+                e.title += ' caused by an unknown peer'
+                self.log.error(Failure(e).getTraceback())
+                self.peer._ui.notify_error(e)
+                self.connection.remove_manager()
 
-    def receive_data(self, data):
+    def _receive_data(self, data, connection=None):
         self.log.info('Introduction data received')
 
         packet = packets.IntroductionPacket.build(data)
@@ -1120,7 +1120,7 @@ class Introduction(Thread):
                 # receive the packet using the existing conversation
                 if not conv.is_active:
                     conv.set_active(self.connection, Conversation.state_conv)
-                conv.queue_in_data.put([data, self.connection])
+                conv.receive_data(data, self.connection)
                 break
         else:
             self.log.info('Assuming the packet is a RequestPacket')
@@ -1182,7 +1182,8 @@ class Conversation(object):
 
     _managers = attr.ib(init=False, default=attr.Factory(dict))
 
-    queue_in_data = attr.ib(init=False, default=attr.Factory(Queue))
+    receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
+
     queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
     queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
 
@@ -1191,7 +1192,6 @@ class Conversation(object):
 
     is_active = attr.ib(init=False, default=False)
 
-    thread_in_data = attr.ib(init=False)
     thread_out_data = attr.ib(init=False)
     thread_in_packets = attr.ib(init=False)
 
@@ -1201,8 +1201,6 @@ class Conversation(object):
         self._paths = ConversationPaths(self.peer._paths.conversations_dir,
                                         self.contact.name)
 
-        self.thread_in_data = Thread(target=self.check_in_data)
-        self.thread_in_data.daemon = True
         self.thread_out_data = Thread(target=self.check_out_data)
         self.thread_out_data.daemon = True
         self.thread_in_packets = Thread(target=self.check_in_packets)
@@ -1224,7 +1222,6 @@ class Conversation(object):
             notifications.ElementNotification(element))
 
     def start(self):
-        self.thread_in_data.start()
         self.thread_out_data.start()
         self.thread_in_packets.start()
 
@@ -1269,11 +1266,6 @@ class Conversation(object):
         if not os.path.exists(self._paths.base):
             os.makedirs(self._paths.base)
 
-    def check_in_data(self):
-        while True:
-            data, connection = self.queue_in_data.get()
-            self.receive_data(data, connection)
-
     def check_out_data(self):
         while True:
             data, d = self.queue_out_data.get()
@@ -1296,25 +1288,26 @@ class Conversation(object):
         return d
 
     def receive_data(self, data, connection=None):
-        try:
-            method = getattr(self, 'handle_{}_data'.format(self.state))
-        except AttributeError:
-            # the state does not have a "handle" method, which currently is
-            # state_in_req because it should be waiting for the request to
-            # be accepted (by the user) and meanwhile no more data should
-            # be received from the other party
-            # TODO maybe disconnect instead of ignoring the data
-            self.log.warn('Failed to find the handle method for state: '
-                          '{state}', state=self.state)
-        except (errors.MalformedPacketError,
-                errors.CorruptedPacketError) as e:
-            e.title += ' caused by "{}"'.format(self.contact.name)
-            self.peer._ui.notify_error(e)
-        else:
-            self.log.debug(
-                'Handling data with {method.__name__} for state: {state}',
-                method=method, state=self.state)
-            method(data, connection)
+        with self.receive_data_lock:
+            try:
+                method = getattr(self, 'handle_{}_data'.format(self.state))
+            except AttributeError:
+                # the state does not have a "handle" method, which currently is
+                # state_in_req because it should be waiting for the request to
+                # be accepted (by the user) and meanwhile no more data should
+                # be received from the other party
+                # TODO maybe disconnect instead of ignoring the data
+                self.log.warn('Failed to find the handle method for state: '
+                              '{state}', state=self.state)
+            except (errors.MalformedPacketError,
+                    errors.CorruptedPacketError) as e:
+                e.title += ' caused by "{}"'.format(self.contact.name)
+                self.peer._ui.notify_error(e)
+            else:
+                self.log.debug(
+                    'Handling data with {method.__name__} for state: {state}',
+                    method=method, state=self.state)
+                method(data, connection)
 
     def handle_conv_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
@@ -1584,12 +1577,11 @@ class FileSession(object):
     def _paths(self):
         return self.conversation._paths.file_transfer_dir
 
-    @property
-    def queue_in_data(self):
-        return self.conversation.queue_in_data
-
     def send_data(self, data):
         return fork(self.connection.send, data)
+
+    def receive_data(self, data, connection=None):
+        self.conversation.receive_data(data, connection)
 
     def stop(self):
         if self.connection:
@@ -1836,7 +1828,7 @@ class _ConversationProtocol(NetstringReceiver, object):
         try:
             if self.type_ in [_ConversationProtocol.type_regular,
                               _ConversationProtocol.type_file]:
-                self.manager.queue_in_data.put([string, self])
+                self.manager.receive_data(string, self)
             elif self.type_ == _ConversationProtocol.type_untalk:
                 self.manager.receive_data(string)
             else:
