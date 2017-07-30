@@ -1087,7 +1087,7 @@ class Introduction(Thread):
     def run(self):
         data, _ = self.queue_in_data.get()
         try:
-            self.handle_introduction_data(data)
+            self.receive_data(data)
         except (errors.MalformedPacketError,
                 errors.CorruptedPacketError,
                 errors.InvalidIdentityError,
@@ -1097,7 +1097,7 @@ class Introduction(Thread):
             self.peer._ui.notify_error(e)
             self.connection.remove_manager()
 
-    def handle_introduction_data(self, data):
+    def receive_data(self, data):
         self.log.info('Introduction data received')
 
         packet = packets.IntroductionPacket.build(data)
