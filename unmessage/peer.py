@@ -156,6 +156,10 @@ class Peer(object):
 
         self._conversations = self._load_conversations()
 
+        self._twisted_factory = _ConversationFactory(
+            peer=self,
+            connection_made=self._add_intro_manager)
+
         self._state = Peer.state_created
 
     @classmethod
@@ -690,10 +694,6 @@ class Peer(object):
             self._reactor,
             self._port_local_server,
             interface=self._ip_local_server)
-
-        self._twisted_factory = _ConversationFactory(
-            peer=self,
-            connection_made=self._add_intro_manager)
 
         self._notify_bootstrap('Running local server')
 
