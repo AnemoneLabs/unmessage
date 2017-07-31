@@ -3,6 +3,8 @@ import pytest
 from unmessage.peer import Peer, _ConversationProtocol
 from unmessage.log import begin_logging, Logger, LogLevel
 
+from .utils import attach
+
 
 @pytest.fixture(scope='session')
 def reactor():
@@ -36,6 +38,14 @@ def conn_a(peer_a):
 @pytest.fixture()
 def conn_b(peer_b):
     return create_connection(peer_b)
+
+
+@pytest.fixture()
+def peers(peer_a, peer_b, conn_a, conn_b, mocker):
+    attach(peer_a, peer_b, conn_a, conn_b, mocker)
+    return (peer_b._send_request(peer_a.identity, peer_a.identity_keys.pub)
+            .addCallback(lambda *args: peer_a.accept_request(peer_b.identity))
+            .addCallback(lambda *args: (peer_a, peer_b)))
 
 
 @pytest.fixture(scope='session')
