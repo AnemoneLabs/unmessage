@@ -10,24 +10,32 @@ def reactor():
     return _reactor
 
 
+def create_peer(name, reactor):
+    return Peer(name, reactor)
+
+
 @pytest.fixture()
 def peer_a(reactor):
-    return Peer('pytest-a', reactor)
+    return create_peer('pytest-a', reactor)
 
 
 @pytest.fixture()
 def peer_b(reactor):
-    return Peer('pytest-b', reactor)
+    return create_peer('pytest-b', reactor)
+
+
+def create_connection(peer):
+    return _ConversationProtocol(peer._twisted_factory)
 
 
 @pytest.fixture()
 def conn_a(peer_a):
-    return _ConversationProtocol(peer_a._twisted_factory)
+    return create_connection(peer_a)
 
 
 @pytest.fixture()
 def conn_b(peer_b):
-    return _ConversationProtocol(peer_b._twisted_factory)
+    return create_connection(peer_b)
 
 
 @pytest.fixture(scope='session')
