@@ -155,8 +155,6 @@ class Peer(object):
             self._identity_keys = pyaxo.generate_keypair()
 
         self._conversations = self._load_conversations()
-        for c in self.conversations:
-            c.start()
 
         self._state = Peer.state_created
 
@@ -783,7 +781,6 @@ class Peer(object):
                 raise
         else:
             conv = req.conversation
-            conv.start()
             conv.set_active(connection, Conversation.state_out_req)
 
             yield conv.send_data(str(req.packet))
@@ -1131,7 +1128,6 @@ class Introduction(Thread):
             req = self.peer._process_request(data)
 
             conv = req.conversation
-            conv.start()
             conv.set_active(self.connection, Conversation.state_in_req)
 
             contact = req.conversation.contact
@@ -1209,9 +1205,6 @@ class Conversation(object):
     def parse_message_element(cls, element, conversation):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
-
-    def start(self):
-        pass
 
     @property
     def is_authenticated(self):
