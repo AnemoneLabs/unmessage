@@ -1184,7 +1184,6 @@ class Conversation(object):
 
     receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
-    queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
     queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
@@ -1192,7 +1191,6 @@ class Conversation(object):
 
     is_active = attr.ib(init=False, default=False)
 
-    thread_out_data = attr.ib(init=False)
     thread_in_packets = attr.ib(init=False)
 
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
@@ -1201,8 +1199,6 @@ class Conversation(object):
         self._paths = ConversationPaths(self.peer._paths.conversations_dir,
                                         self.contact.name)
 
-        self.thread_out_data = Thread(target=self.check_out_data)
-        self.thread_out_data.daemon = True
         self.thread_in_packets = Thread(target=self.check_in_packets)
         self.thread_in_packets.daemon = True
 
@@ -1222,7 +1218,6 @@ class Conversation(object):
             notifications.ElementNotification(element))
 
     def start(self):
-        self.thread_out_data.start()
         self.thread_in_packets.start()
 
     @property
@@ -1266,26 +1261,13 @@ class Conversation(object):
         if not os.path.exists(self._paths.base):
             os.makedirs(self._paths.base)
 
-    def check_out_data(self):
-        while True:
-            data, d = self.queue_out_data.get()
-            try:
-                self.connection.send(data)
-            except Exception as e:
-                d.errback(errors.UnmessageError(title=type(e),
-                                                message=e.message))
-            else:
-                d.callback(None)
-
     def check_in_packets(self):
         while True:
             args = self.queue_in_packets.get()
             self.peer._receive_packet(*args)
 
     def send_data(self, data):
-        d = Deferred()
-        self.queue_out_data.put((data, d))
-        return d
+        return fork(self.connection.send, data)
 
     def receive_data(self, data, connection=None):
         with self.receive_data_lock:
