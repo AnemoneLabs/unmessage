@@ -360,7 +360,6 @@ class Peer(object):
     def _add_intro_manager(self, connection):
         manager = Introduction(self, connection)
         self._managers_conv.append(manager)
-        manager.start()
         return manager
 
     def _connect(self, address):
@@ -1067,11 +1066,8 @@ class Peer(object):
         return self._authenticate(self.get_conversation(name), secret)
 
 
-class Introduction(Thread):
+class Introduction(object):
     def __init__(self, peer, connection):
-        super(Introduction, self).__init__()
-        self.daemon = True
-
         self.receive_data_lock = Lock()
 
         self.peer = peer
