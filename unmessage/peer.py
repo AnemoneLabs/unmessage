@@ -1184,23 +1184,16 @@ class Conversation(object):
 
     receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
-    queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
-
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
     is_active = attr.ib(init=False, default=False)
-
-    thread_in_packets = attr.ib(init=False)
 
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
         self._paths = ConversationPaths(self.peer._paths.conversations_dir,
                                         self.contact.name)
-
-        self.thread_in_packets = Thread(target=self.check_in_packets)
-        self.thread_in_packets.daemon = True
 
     @classmethod
     def parse_presence_element(cls, element, conversation):
@@ -1218,7 +1211,7 @@ class Conversation(object):
             notifications.ElementNotification(element))
 
     def start(self):
-        self.thread_in_packets.start()
+        pass
 
     @property
     def is_authenticated(self):
@@ -1261,11 +1254,6 @@ class Conversation(object):
         if not os.path.exists(self._paths.base):
             os.makedirs(self._paths.base)
 
-    def check_in_packets(self):
-        while True:
-            args = self.queue_in_packets.get()
-            self.peer._receive_packet(*args)
-
     def send_data(self, data):
         return fork(self.connection.send, data)
 
@@ -1293,7 +1281,7 @@ class Conversation(object):
 
     def handle_conv_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        self.queue_in_packets.put([packet, connection, self])
+        self.peer._receive_packet(packet, connection, self)
 
     def handle_out_req_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
