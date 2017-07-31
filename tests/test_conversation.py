@@ -39,3 +39,12 @@ def test_establish_conversation(peer_a, peer_b, conn_a, conn_b, mocker):
     conv_b = peer_b._conversations[peer_a.name]
 
     check_established_conversation(peer_a, peer_b, conv_a, conv_b)
+
+
+@pytest.inlineCallbacks
+def test_established_peers(peers):
+    peer_a, peer_b = yield peers
+    conv_a = peer_a._conversations[peer_b.name]
+    conv_b = peer_b._conversations[peer_a.name]
+
+    check_established_conversation(peer_a, peer_b, conv_a, conv_b)
