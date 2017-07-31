@@ -19,6 +19,15 @@ def test_conversation_request(peer_a, peer_b):
     assert contact_b.key == peer_b.identity_keys.pub
 
 
+def check_established_conversation(peer_x, peer_y, conv_x, conv_y):
+    assert conv_x.contact.identity == peer_y.identity
+    assert conv_y.contact.identity == peer_x.identity
+    assert conv_x.contact.key == peer_y.identity_keys.pub
+    assert conv_y.contact.key == peer_x.identity_keys.pub
+    assert conv_x.axolotl.id_ == conv_y.axolotl.id_
+    assert conv_x.keys.key == conv_y.keys.key
+
+
 @pytest.inlineCallbacks
 def test_establish_conversation(peer_a, peer_b, conn_a, conn_b, mocker):
     attach(peer_a, peer_b, conn_a, conn_b, mocker)
@@ -29,9 +38,4 @@ def test_establish_conversation(peer_a, peer_b, conn_a, conn_b, mocker):
     conv_a = peer_a._conversations[peer_b.name]
     conv_b = peer_b._conversations[peer_a.name]
 
-    assert conv_a.contact.identity == peer_b.identity
-    assert conv_b.contact.identity == peer_a.identity
-    assert conv_a.contact.key == peer_b.identity_keys.pub
-    assert conv_b.contact.key == peer_a.identity_keys.pub
-    assert conv_a.axolotl.id_ == conv_b.axolotl.id_
-    assert conv_a.keys.key == conv_b.keys.key
+    check_established_conversation(peer_a, peer_b, conv_a, conv_b)
