@@ -1,5 +1,6 @@
 import pytest
 from twisted.internet import defer
+from twisted.internet.defer import Deferred
 
 from unmessage.contact import Contact
 from unmessage.peer import b2a, Conversation, Peer
@@ -48,3 +49,18 @@ def test_established_peers(peers):
     conv_b = peer_b._conversations[peer_a.name]
 
     check_established_conversation(peer_a, peer_b, conv_a, conv_b)
+
+
+@pytest.inlineCallbacks
+def test_send_message(peers, callback_side_effect):
+    peer_a, peer_b = yield peers
+    conv_a = peer_a._conversations[peer_b.name]
+    conv_b = peer_b._conversations[peer_a.name]
+
+    d = Deferred()
+    conv_b.ui.notify_message = callback_side_effect(d)
+
+    sent_message = 'message'
+    yield peer_a.send_message(peer_b.name, sent_message)
+    received_message = yield d
+    assert str(received_message) == sent_message
