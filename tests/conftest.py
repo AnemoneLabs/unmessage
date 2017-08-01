@@ -1,19 +1,14 @@
 import pytest
 
-from unmessage.peer import Peer, _ConversationProtocol
 from unmessage.log import begin_logging, Logger, LogLevel
 
-from .utils import attach
+from .utils import attach, create_peer
 
 
 @pytest.fixture(scope='session')
 def reactor():
     from twisted.internet import reactor as _reactor
     return _reactor
-
-
-def create_peer(name, reactor):
-    return Peer(name, reactor)
 
 
 @pytest.fixture()

@@ -1,6 +1,10 @@
 from twisted.internet import defer
 
-from unmessage.peer import _ConversationProtocol
+from unmessage.peer import Peer, _ConversationProtocol
+
+
+def create_peer(name, reactor):
+    return Peer(name, reactor)
 
 
 def create_connection(peer):
