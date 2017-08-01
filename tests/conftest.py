@@ -5,6 +5,13 @@ from unmessage.log import begin_logging, Logger, LogLevel
 from .utils import attach, create_peer
 
 
+@pytest.fixture()
+def callback_side_effect(mocker):
+    def side_effect(d):
+        return mocker.Mock(side_effect=lambda *args: d.callback(*args))
+    return side_effect
+
+
 @pytest.fixture(scope='session')
 def reactor():
     from twisted.internet import reactor as _reactor
