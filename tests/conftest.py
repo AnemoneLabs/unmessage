@@ -26,23 +26,9 @@ def peer_b(reactor):
     return create_peer('pytest-b', reactor)
 
 
-def create_connection(peer):
-    return _ConversationProtocol(peer._twisted_factory)
-
-
 @pytest.fixture()
-def conn_a(peer_a):
-    return create_connection(peer_a)
-
-
-@pytest.fixture()
-def conn_b(peer_b):
-    return create_connection(peer_b)
-
-
-@pytest.fixture()
-def peers(peer_a, peer_b, conn_a, conn_b, mocker):
-    attach(peer_a, peer_b, conn_a, conn_b, mocker)
+def peers(peer_a, peer_b, mocker):
+    attach(peer_a, peer_b, mocker)
     return (peer_b._send_request(peer_a.identity, peer_a.identity_keys.pub)
             .addCallback(lambda *args: peer_a.accept_request(peer_b.identity))
             .addCallback(lambda *args: (peer_a, peer_b)))

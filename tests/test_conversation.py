@@ -29,8 +29,8 @@ def check_established_conversation(peer_x, peer_y, conv_x, conv_y):
 
 
 @pytest.inlineCallbacks
-def test_establish_conversation(peer_a, peer_b, conn_a, conn_b, mocker):
-    attach(peer_a, peer_b, conn_a, conn_b, mocker)
+def test_establish_conversation(peer_a, peer_b, mocker):
+    attach(peer_a, peer_b, mocker)
 
     yield peer_b.send_request(peer_a.identity, b2a(peer_a.identity_keys.pub))
     yield peer_a.accept_request(peer_b.identity)
