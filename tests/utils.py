@@ -29,6 +29,11 @@ def fake_connect(peer_in, peer_out, mocker):
         conn_in.transport = mocker.Mock()
         conn_out.transport = mocker.Mock()
 
+        conn_in.transport.loseConnection = mocker.Mock(
+            side_effect=lambda: conn_out.connectionLost(None))
+        conn_in.transport.loseConnection = mocker.Mock(
+            side_effect=lambda: conn_in.connectionLost(None))
+
         conn_in.send = mocker.Mock(side_effect=fake_send(conn_out))
         conn_out.send = mocker.Mock(side_effect=fake_send(conn_in))
 
