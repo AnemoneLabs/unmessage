@@ -66,8 +66,8 @@ def test_send_message(peers, callback_side_effect):
     assert str(received_message) == sent_message
 
 
-SECRETS = [['secret', 'secret'],
-           ['secret', 'wrong secret']]
+SECRETS = [('secret', 'secret'),
+           ('secret', 'wrong secret')]
 SECRETS_IDS = ['same', 'distinct']
 
 
