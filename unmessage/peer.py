@@ -1686,7 +1686,7 @@ class ElementParser(object):
         Conversation.parse_message_element(element, conversation)
 
     def _parse_auth_element(self, element, conversation, connection=None):
-        join(AuthSession.parse_auth_element(element, conversation))
+        AuthSession.parse_auth_element(element, conversation)
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
