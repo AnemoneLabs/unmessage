@@ -1,6 +1,10 @@
+import pytest
 from twisted.internet import defer
 
 from unmessage.peer import Peer, _ConversationProtocol
+
+
+slow = pytest.mark.slow
 
 
 def create_peer(name, reactor):

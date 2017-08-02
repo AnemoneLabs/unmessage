@@ -5,7 +5,7 @@ from twisted.internet.defer import Deferred
 from unmessage.contact import Contact
 from unmessage.peer import b2a, Conversation, Peer
 
-from .utils import attach
+from .utils import attach, slow
 
 
 def test_conversation_request(peer_a, peer_b):
@@ -71,6 +71,7 @@ SECRETS = [['secret', 'secret'],
 SECRETS_IDS = ['same', 'distinct']
 
 
+@slow
 @pytest.inlineCallbacks
 @pytest.mark.parametrize('secrets', SECRETS, ids=SECRETS_IDS)
 def test_authenticate(secrets, peers, callback_side_effect):
