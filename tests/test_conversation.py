@@ -64,3 +64,35 @@ def test_send_message(peers, callback_side_effect):
     yield peer_a.send_message(peer_b.name, sent_message)
     received_message = yield d
     assert str(received_message) == sent_message
+
+
+SECRETS = [['secret', 'secret'],
+           ['secret', 'wrong secret']]
+SECRETS_IDS = ['same', 'distinct']
+
+
+@pytest.inlineCallbacks
+@pytest.mark.parametrize('secrets', SECRETS, ids=SECRETS_IDS)
+def test_authenticate(secrets, peers, callback_side_effect):
+    peer_a, peer_b = yield peers
+    conv_a = peer_a._conversations[peer_b.name]
+    conv_b = peer_b._conversations[peer_a.name]
+
+    d_receive_b = Deferred()
+    conv_b.ui.notify_in_authentication = callback_side_effect(d_receive_b)
+    d_finish_a = Deferred()
+    conv_a.ui.notify_finished_authentication = callback_side_effect(d_finish_a)
+    d_finish_b = Deferred()
+    conv_b.ui.notify_finished_authentication = callback_side_effect(d_finish_b)
+
+    secret_a, secret_b = secrets
+    yield peer_a.authenticate(peer_b.name, secret_a)
+    yield d_receive_b
+    yield peer_b.authenticate(peer_a.name, secret_b)
+    yield d_finish_b
+    yield d_finish_a
+
+    authenticated = secret_a == secret_b
+
+    assert conv_a.is_authenticated is authenticated
+    assert conv_b.is_authenticated is authenticated
