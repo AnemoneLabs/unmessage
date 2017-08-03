@@ -5,7 +5,9 @@ from twisted.internet.defer import Deferred
 from unmessage.contact import Contact
 from unmessage.peer import b2a, Conversation, Peer
 
-from .utils import attach, slow
+from .utils import attach
+
+from .test_shared import slow
 
 
 def test_conversation_request(peer_a, peer_b):

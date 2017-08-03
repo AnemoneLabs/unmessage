@@ -2,7 +2,11 @@ import pytest
 
 from unmessage.log import begin_logging, Logger, LogLevel
 
-from .utils import attach, create_peer
+from .utils import attach, create_peer, slow_help, slow_option
+
+
+def pytest_addoption(parser):
+    parser.addoption(slow_option, action='store_true', help=slow_help)
 
 
 @pytest.fixture()
