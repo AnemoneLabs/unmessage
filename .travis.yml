@@ -32,7 +32,7 @@ install:
     - pip install .[dev]
 
 script:
-    - pytest --cov=./ --twisted
+    - pytest
 
 after_success:
     - codecov
