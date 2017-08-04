@@ -1,3 +1,5 @@
+import errno
+import os
 import pytest
 from twisted.internet import defer
 
@@ -6,6 +8,14 @@ from unmessage.peer import Peer, _ConversationProtocol
 
 slow_help = 'run slow tests'
 slow_option = '--run-slow'
+
+
+def remove_file(file_path):
+    try:
+        os.remove(file_path)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
 
 
 def create_peer(name, reactor):
