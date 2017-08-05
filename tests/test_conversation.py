@@ -54,7 +54,7 @@ def test_established_peers(peers):
 
 
 @pytest.inlineCallbacks
-def test_send_presence(peers, callback_side_effect, log):
+def test_send_presence(peers, callback_side_effect):
     peer_a, peer_b = yield peers
     conv_a = peer_a._conversations[peer_b.name]
     conv_b = peer_b._conversations[peer_a.name]
