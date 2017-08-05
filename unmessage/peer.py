@@ -1498,7 +1498,7 @@ class FileSession(object):
             manager = conversation.file_session
             if manager:
                 transfer = yield manager.send_file(element)
-                conversation.ui.notify(
+                conversation.ui.notify_finished_out_file(
                     notifications.FileNotification(
                         'Finished sending "{}" to {}'.format(
                             transfer.element.content,
@@ -1521,7 +1521,7 @@ class FileSession(object):
         if manager:
             transfer = manager.receive_file(element)
             manager.save_received_file(transfer.element.checksum)
-            conversation.ui.notify(
+            conversation.ui.notify_finished_in_file(
                 notifications.FileNotification(
                     'Finished receiving "{}" from {}, saved at {}'.format(
                         transfer.element.content,

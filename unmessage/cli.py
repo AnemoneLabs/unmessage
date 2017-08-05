@@ -776,6 +776,12 @@ class _ConversationHandler(ConversationUi):
                 notification.transfer.element.checksum),
             notification.title)
 
+    def notify_finished_in_file(self, notification):
+        self.notify(notification)
+
+    def notify_finished_out_file(self, notification):
+        self.notify(notification)
+
 
 def sync_curses(f):
     @wraps(f)
