@@ -46,18 +46,14 @@ def test_establish_conversation(peer_a, peer_b, mocker):
 
 @pytest.inlineCallbacks
 def test_established_peers(peers):
-    peer_a, peer_b = yield peers
-    conv_a = peer_a._conversations[peer_b.name]
-    conv_b = peer_b._conversations[peer_a.name]
+    peer_a, peer_b, conv_a, conv_b = yield peers
 
     check_established_conversation(peer_a, peer_b, conv_a, conv_b)
 
 
 @pytest.inlineCallbacks
 def test_send_presence(peers, callback_side_effect):
-    peer_a, peer_b = yield peers
-    conv_a = peer_a._conversations[peer_b.name]
-    conv_b = peer_b._conversations[peer_a.name]
+    peer_a, peer_b, conv_a, conv_b = yield peers
 
     d_offline = Deferred()
     conv_b.ui.notify_offline = callback_side_effect(d_offline)
@@ -83,9 +79,7 @@ def test_send_presence(peers, callback_side_effect):
 
 @pytest.inlineCallbacks
 def test_send_message(peers, callback_side_effect):
-    peer_a, peer_b = yield peers
-    conv_a = peer_a._conversations[peer_b.name]
-    conv_b = peer_b._conversations[peer_a.name]
+    peer_a, peer_b, _, conv_b = yield peers
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
@@ -105,9 +99,7 @@ SECRETS_IDS = ['same', 'distinct']
 @pytest.inlineCallbacks
 @pytest.mark.parametrize('secrets', SECRETS, ids=SECRETS_IDS)
 def test_authenticate(secrets, peers, callback_side_effect):
-    peer_a, peer_b = yield peers
-    conv_a = peer_a._conversations[peer_b.name]
-    conv_b = peer_b._conversations[peer_a.name]
+    peer_a, peer_b, conv_a, conv_b = yield peers
 
     d_receive_b = Deferred()
     conv_b.ui.notify_in_authentication = callback_side_effect(d_receive_b)

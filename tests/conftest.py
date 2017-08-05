@@ -37,7 +37,10 @@ def peers(peer_a, peer_b, mocker):
     attach(peer_a, peer_b, mocker)
     return (peer_b._send_request(peer_a.identity, peer_a.identity_keys.pub)
             .addCallback(lambda *args: peer_a.accept_request(peer_b.identity))
-            .addCallback(lambda *args: (peer_a, peer_b)))
+            .addCallback(lambda *args: (peer_a,
+                                        peer_b,
+                                        peer_a._conversations[peer_b.name],
+                                        peer_b._conversations[peer_a.name])))
 
 
 @pytest.fixture(scope='session')

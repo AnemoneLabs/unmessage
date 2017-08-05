@@ -10,9 +10,7 @@ from .utils import remove_file
 @pytest.inlineCallbacks
 def test_send_file(out_contents, out_path, in_path, peers,
                    callback_side_effect):
-    peer_a, peer_b = yield peers
-    conv_a = peer_a._conversations[peer_b.name]
-    conv_b = peer_b._conversations[peer_a.name]
+    peer_a, peer_b, conv_a, conv_b = yield peers
 
     out_hash = hash_(out_contents)
 
