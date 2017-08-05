@@ -1667,9 +1667,7 @@ class ElementParser(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def _parse_filereq_element(self, element, conversation, connection=None):
-        join(FileSession.parse_request_element(element,
-                                               conversation,
-                                               connection))
+        FileSession.parse_request_element(element, conversation, connection)
 
     def _parse_file_element(self, element, conversation, connection=None):
         FileSession.parse_file_element(element, conversation)
