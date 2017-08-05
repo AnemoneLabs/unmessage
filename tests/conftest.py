@@ -9,7 +9,7 @@ def pytest_addoption(parser):
     parser.addoption(slow_option, action='store_true', help=slow_help)
 
 
-@pytest.fixture()
+@pytest.fixture
 def callback_side_effect(mocker):
     def side_effect(d):
         return mocker.Mock(side_effect=lambda *args: d.callback(*args))
@@ -22,17 +22,17 @@ def reactor():
     return _reactor
 
 
-@pytest.fixture()
+@pytest.fixture
 def peer_a(reactor):
     return create_peer('pytest-a', reactor)
 
 
-@pytest.fixture()
+@pytest.fixture
 def peer_b(reactor):
     return create_peer('pytest-b', reactor)
 
 
-@pytest.fixture()
+@pytest.fixture
 def peers(peer_a, peer_b, mocker):
     attach(peer_a, peer_b, mocker)
     return (peer_b._send_request(peer_a.identity, peer_a.identity_keys.pub)
