@@ -1582,7 +1582,7 @@ class FileSession(object):
     @inlineCallbacks
     def send_request(self, file_path):
         _, file_name = os.path.split(file_path)
-        if is_valid_file_name:
+        if is_valid_file_name(file_name):
             with open(os.path.expanduser(file_path), 'rb') as f:
                 file_ = f.read()
             checksum = b2a(pyaxo.hash_(file_))
