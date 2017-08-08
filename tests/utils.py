@@ -6,6 +6,7 @@ from twisted.internet import defer
 from unmessage.peer import Peer, _ConversationProtocol
 
 
+slow = pytest.mark.slow
 slow_help = 'run slow tests'
 slow_option = '--run-slow'
 

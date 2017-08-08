@@ -2,7 +2,19 @@ import pytest
 
 from unmessage.log import begin_logging, Logger, LogLevel
 
-from .utils import attach, create_peer, slow_help, slow_option
+from .utils import attach, create_peer
+from .utils import slow, slow_help, slow_option
+
+
+def skipif_option(option):
+    return pytest.mark.skipif(not pytest.config.getoption(option),
+                              reason='need {} option to run'.format(option))
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if slow.name in item.keywords:
+            item.add_marker(skipif_option(slow_option))
 
 
 def pytest_addoption(parser):
