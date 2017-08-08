@@ -1,8 +1,6 @@
 import ConfigParser
-import errno
 import hmac
 import os
-import sqlite3
 from hashlib import sha256
 from Queue import Queue
 from threading import Event, Lock, Thread
@@ -37,9 +35,10 @@ from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
 from .log import begin_logging, loggerFor
 from .ui import ConversationUi, PeerUi
-from .utils import fork, join, Address
+from .utils import fork, join, default_factory_attrib, Paths, Address
 from .utils import is_valid_identity, is_valid_file_name
 from .utils import raise_if_not, raise_invalid_name, raise_invalid_shared_key
+from .persistence import PeerInfo, Persistence
 from .smp import SMP
 
 
@@ -63,6 +62,32 @@ TOR_CONTROL_PORT = 9055
 
 
 @attr.s
+class PeerPaths(Paths):
+    @classmethod
+    def create(cls, name, base=APP_DIR):
+        return cls(base, name)
+
+    peer_db = default_factory_attrib(
+        lambda self: self.join('peer.db'))
+    axolotl_db = default_factory_attrib(
+        lambda self: self.join('axolotl.db'))
+    tor_dir = default_factory_attrib(
+        lambda self: self.to_new('tor'))
+    tor_data_dir = default_factory_attrib(
+        lambda self: self.tor_dir.join('data'))
+    log_file = default_factory_attrib(
+        lambda self: self.join('peer.log'))
+    conversations_dir = default_factory_attrib(
+        lambda self: self.join('conversations'))
+
+
+@attr.s
+class ConversationPaths(Paths):
+    file_transfer_dir = default_factory_attrib(
+        lambda self: self.to_new('file-transfer'))
+
+
+@attr.s
 class Peer(object):
     state_created = 'created'
     state_running = 'running'
@@ -70,13 +95,24 @@ class Peer(object):
 
     _peer_name = attr.ib(validator=raise_invalid_name)
     _reactor = attr.ib(validator=attr.validators.instance_of(ReactorBase))
+    _paths = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerPaths)),
+        default=attr.Factory(lambda self: PeerPaths.create(self._peer_name),
+                             takes_self=True))
+    _persistence = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Persistence)),
+        default=None)
+    _info = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(PeerInfo)),
+        default=attr.Factory(lambda: PeerInfo(port_local_server=PORT)))
     _ui = attr.ib(
         validator=attr.validators.optional(
             attr.validators.instance_of(PeerUi)),
         default=attr.Factory(PeerUi))
 
-    _info = attr.ib(init=False)
-    _persistence = attr.ib(init=False)
     _axolotl = attr.ib(init=False, default=None)
     _conversations = attr.ib(init=False, default=attr.Factory(dict))
     _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
@@ -108,43 +144,64 @@ class Peer(object):
     def __attrs_post_init__(self):
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
-        self._info = PeerInfo(port_local_server=PORT)
         self._name = self._peer_name
-        self._persistence = Persistence(dbname=self._path_peer_db)
         self._element_parser = ElementParser(self)
+
+        self._axolotl = Axolotl(name=self.name,
+                                dbname=self._paths.axolotl_db,
+                                dbpassphrase=None,
+                                nonthreaded_sql=False)
+        if self.identity_keys is None:
+            self._identity_keys = pyaxo.generate_keypair()
+
+        self._conversations = self._load_conversations()
+
+        self._twisted_factory = _ConversationFactory(
+            peer=self,
+            connection_made=self._add_intro_manager)
+
         self._state = Peer.state_created
 
-    @property
-    def _path_peer_dir(self):
-        return os.path.join(APP_DIR, self.name)
+    @classmethod
+    def from_disk(cls, name, reactor, ui=None,
+                  begin_log=False, begin_log_std=False, log_level=None):
+        paths = PeerPaths.create(name)
 
-    @property
-    def _path_peer_db(self):
-        return os.path.join(self._path_peer_dir, 'peer.db')
+        cls.create_peer_dir(paths)
+        persistence = Persistence.create(paths)
+        info = cls.load_peer_info(persistence, paths)
 
-    @property
-    def _path_axolotl_db(self):
-        return os.path.join(self._path_peer_dir, 'axolotl.db')
+        kwargs = {'paths': paths,
+                  'persistence': persistence}
+        if info is not None:
+            kwargs['info'] = info
+        if ui is not None:
+            kwargs['ui'] = ui
+        peer = Peer(name, reactor, **kwargs)
 
-    @property
-    def _path_tor_dir(self):
-        return os.path.join(self._path_peer_dir, 'tor')
+        if begin_log:
+            if log_level is None:
+                begin_logging(peer._paths.log_file, begin_std=begin_log_std)
+            else:
+                begin_logging(peer._paths.log_file, log_level, begin_log_std)
 
-    @property
-    def _path_tor_data_dir(self):
-        return os.path.join(self._path_tor_dir, 'data')
+        peer._update_config()
 
-    @property
-    def _path_onion_service_dir(self):
-        return os.path.join(self._path_tor_dir, 'onion-service')
+        return peer
 
-    @property
-    def path_log_file(self):
-        return os.path.join(self._path_peer_dir, 'peer.log')
+    @classmethod
+    def create_peer_dir(cls, paths):
+        if not os.path.exists(paths.base):
+            os.makedirs(paths.base)
+        if not os.path.exists(paths.conversations_dir):
+            os.makedirs(paths.conversations_dir)
+        if not os.path.exists(paths.tor_dir.base):
+            os.makedirs(paths.tor_dir.base)
 
-    @property
-    def path_conversations_dir(self):
-        return os.path.join(self._path_peer_dir, 'conversations')
+    @classmethod
+    def load_peer_info(cls, persistence, paths):
+        if os.path.exists(paths.peer_db):
+            return persistence.load_peer_info()
 
     @property
     def _contacts(self):
@@ -175,7 +232,7 @@ class Peer(object):
         try:
             onion_domain = self._onion_service.hostname
         except AttributeError:
-            onion_domain = 'hostname-not-found'
+            onion_domain = 'hostnamenotfound.onion'
         return Address(onion_domain, self._port_local_server)
 
     @property
@@ -216,6 +273,10 @@ class Peer(object):
         return self._outbound_requests.values()
 
     @property
+    def has_persistence(self):
+        return self._persistence is not None
+
+    @property
     def is_running(self):
         return self._state == Peer.state_running
 
@@ -237,18 +298,6 @@ class Peer(object):
         else:
             conv.ui.notify_error(
                 errors.UnmessageError(failure.getErrorMessage()))
-
-    def _create_peer_dir(self):
-        if not os.path.exists(self._path_peer_dir):
-            os.makedirs(self._path_peer_dir)
-        if not os.path.exists(self.path_conversations_dir):
-            os.makedirs(self.path_conversations_dir)
-        if not os.path.exists(self._path_tor_dir):
-            os.makedirs(self._path_tor_dir)
-
-    def _load_peer_info(self):
-        if os.path.exists(self._path_peer_db):
-            self._info = self._persistence.load_peer_info()
 
     def _update_config(self):
         if not CONFIG.has_section('unMessage'):
@@ -315,7 +364,6 @@ class Peer(object):
     def _add_intro_manager(self, connection):
         manager = Introduction(self, connection)
         self._managers_conv.append(manager)
-        manager.start()
         return manager
 
     def _connect(self, address):
@@ -422,7 +470,8 @@ class Peer(object):
             ratchet_key=ratchet_keys.pub,
             other_ratchet_key=other_ratchet_key,
             mode=mode)
-        axolotl.save()
+        if self.has_persistence:
+            axolotl.save()
 
         conv.axolotl = axolotl
         conv.state = Conversation.state_conv
@@ -606,7 +655,8 @@ class Peer(object):
 
         with conversation.axolotl_lock:
             ciphertext = conversation.axolotl.encrypt(plaintext)
-            conversation.axolotl.save()
+            if self.has_persistence:
+                conversation.axolotl.save()
 
         if handshake_key:
             packet_type = packets.ReplyPacket
@@ -630,7 +680,8 @@ class Peer(object):
         if payload_hash == a2b(packet.payload_hash):
             with conversation.axolotl_lock:
                 plaintext = conversation.axolotl.decrypt(ciphertext)
-                conversation.axolotl.save()
+                if self.has_persistence:
+                    conversation.axolotl.save()
             return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
@@ -643,10 +694,6 @@ class Peer(object):
             self._reactor,
             self._port_local_server,
             interface=self._ip_local_server)
-
-        self._twisted_factory = _ConversationFactory(
-            peer=self,
-            connection_made=self._add_intro_manager)
 
         self._notify_bootstrap('Running local server')
 
@@ -669,7 +716,7 @@ class Peer(object):
             self._tor = yield txtorcon.launch(
                 self._reactor,
                 progress_updates=display_bootstrap_lines,
-                data_directory=self._path_tor_data_dir,
+                data_directory=self._paths.tor_data_dir,
                 socks_port=self._port_tor_socks)
         else:
             self._notify_bootstrap('Connecting to existing Tor')
@@ -733,7 +780,6 @@ class Peer(object):
                 raise
         else:
             conv = req.conversation
-            conv.start()
             conv.set_active(connection, Conversation.state_out_req)
 
             yield conv.send_data(str(req.packet))
@@ -747,7 +793,7 @@ class Peer(object):
             returnValue(notification)
 
     @inlineCallbacks
-    def _accept_request(self, request, new_name):
+    def _accept_request(self, request, new_name=None):
         conv = request.conversation
 
         if new_name:
@@ -911,26 +957,12 @@ class Peer(object):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              local_mode=False,
-              begin_log=False,
-              begin_log_std=False,
-              log_level=None):
+              local_mode=False):
         self._notify_bootstrap('Starting peer')
 
         if local_mode:
             launch_tor = False
             self._local_mode = local_mode
-
-        self._create_peer_dir()
-
-        if begin_log:
-            if log_level is None:
-                begin_logging(self.path_log_file, begin_std=begin_log_std)
-            else:
-                begin_logging(self.path_log_file, log_level, begin_log_std)
-
-        self._load_peer_info()
-        self._update_config()
 
         if local_server_ip:
             self._ip_local_server = local_server_ip
@@ -945,17 +977,6 @@ class Peer(object):
 
         self._notify_bootstrap('Peer started')
 
-        self._axolotl = Axolotl(name=self.name,
-                                dbname=self._path_axolotl_db,
-                                dbpassphrase=None,
-                                nonthreaded_sql=False)
-        if not self.identity_keys:
-            self._identity_keys = pyaxo.generate_keypair()
-
-        self._conversations = self._load_conversations()
-        for c in self.conversations:
-            c.start()
-
         self._state = Peer.state_running
 
         self._send_online_presence()
@@ -967,7 +988,8 @@ class Peer(object):
     def stop(self):
         self.log.info('Stopping peer')
 
-        self._save_peer_info()
+        if self.has_persistence:
+            self._save_peer_info()
 
         yield self._send_offline_presence()
 
@@ -1044,12 +1066,9 @@ class Peer(object):
         return self._authenticate(self.get_conversation(name), secret)
 
 
-class Introduction(Thread):
+class Introduction(object):
     def __init__(self, peer, connection):
-        super(Introduction, self).__init__()
-        self.daemon = True
-
-        self.queue_in_data = Queue()
+        self.receive_data_lock = Lock()
 
         self.peer = peer
         self.connection = connection
@@ -1058,20 +1077,20 @@ class Introduction(Thread):
 
         self.log = loggerFor(self)
 
-    def run(self):
-        data, _ = self.queue_in_data.get()
-        try:
-            self.handle_introduction_data(data)
-        except (errors.MalformedPacketError,
-                errors.CorruptedPacketError,
-                errors.InvalidIdentityError,
-                errors.InvalidPublicKeyError) as e:
-            e.title += ' caused by an unknown peer'
-            self.log.error(Failure(e).getTraceback())
-            self.peer._ui.notify_error(e)
-            self.connection.remove_manager()
+    def receive_data(self, data, connection=None):
+        with self.receive_data_lock:
+            try:
+                self._receive_data(data, connection)
+            except (errors.MalformedPacketError,
+                    errors.CorruptedPacketError,
+                    errors.InvalidIdentityError,
+                    errors.InvalidPublicKeyError) as e:
+                e.title += ' caused by an unknown peer'
+                self.log.error(Failure(e).getTraceback())
+                self.peer._ui.notify_error(e)
+                self.connection.remove_manager()
 
-    def handle_introduction_data(self, data):
+    def _receive_data(self, data, connection=None):
         self.log.info('Introduction data received')
 
         packet = packets.IntroductionPacket.build(data)
@@ -1094,7 +1113,7 @@ class Introduction(Thread):
                 # receive the packet using the existing conversation
                 if not conv.is_active:
                     conv.set_active(self.connection, Conversation.state_conv)
-                conv.queue_in_data.put([data, self.connection])
+                conv.receive_data(data, self.connection)
                 break
         else:
             self.log.info('Assuming the packet is a RequestPacket')
@@ -1105,7 +1124,6 @@ class Introduction(Thread):
             req = self.peer._process_request(data)
 
             conv = req.conversation
-            conv.start()
             conv.set_active(self.connection, Conversation.state_in_req)
 
             contact = req.conversation.contact
@@ -1146,6 +1164,8 @@ class Conversation(object):
         default=None)
     connection = attr.ib(default=None)
 
+    _paths = attr.ib(init=False)
+
     axolotl_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
     ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
@@ -1154,28 +1174,18 @@ class Conversation(object):
 
     _managers = attr.ib(init=False, default=attr.Factory(dict))
 
-    queue_in_data = attr.ib(init=False, default=attr.Factory(Queue))
-    queue_out_data = attr.ib(init=False, default=attr.Factory(Queue))
-    queue_in_packets = attr.ib(init=False, default=attr.Factory(Queue))
+    receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
     is_active = attr.ib(init=False, default=False)
 
-    thread_in_data = attr.ib(init=False)
-    thread_out_data = attr.ib(init=False)
-    thread_in_packets = attr.ib(init=False)
-
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def __attrs_post_init__(self):
-        self.thread_in_data = Thread(target=self.check_in_data)
-        self.thread_in_data.daemon = True
-        self.thread_out_data = Thread(target=self.check_out_data)
-        self.thread_out_data.daemon = True
-        self.thread_in_packets = Thread(target=self.check_in_packets)
-        self.thread_in_packets.daemon = True
+        self._paths = ConversationPaths(self.peer._paths.conversations_dir,
+                                        self.contact.name)
 
     @classmethod
     def parse_presence_element(cls, element, conversation):
@@ -1192,11 +1202,6 @@ class Conversation(object):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
 
-    def start(self):
-        self.thread_in_data.start()
-        self.thread_out_data.start()
-        self.thread_in_packets.start()
-
     @property
     def is_authenticated(self):
         try:
@@ -1204,11 +1209,6 @@ class Conversation(object):
         except AttributeError:
             # the session has not been initialized
             return None
-
-    @property
-    def path_dir(self):
-        return os.path.join(self.peer.path_conversations_dir,
-                            self.contact.name)
 
     @property
     def file_session(self):
@@ -1240,12 +1240,14 @@ class Conversation(object):
         del self._managers[manager.type_]
 
     def create_dir(self):
-        if not os.path.exists(self.path_dir):
-            os.makedirs(self.path_dir)
+        if not os.path.exists(self._paths.base):
+            os.makedirs(self._paths.base)
 
-    def check_in_data(self):
-        while True:
-            data, connection = self.queue_in_data.get()
+    def send_data(self, data):
+        return fork(self.connection.send, data)
+
+    def receive_data(self, data, connection=None):
+        with self.receive_data_lock:
             try:
                 method = getattr(self, 'handle_{}_data'.format(self.state))
             except AttributeError:
@@ -1264,33 +1266,11 @@ class Conversation(object):
                 self.log.debug(
                     'Handling data with {method.__name__} for state: {state}',
                     method=method, state=self.state)
-
                 method(data, connection)
-
-    def check_out_data(self):
-        while True:
-            data, d = self.queue_out_data.get()
-            try:
-                self.connection.send(data)
-            except Exception as e:
-                d.errback(errors.UnmessageError(title=type(e),
-                                                message=e.message))
-            else:
-                d.callback(None)
-
-    def check_in_packets(self):
-        while True:
-            args = self.queue_in_packets.get()
-            self.peer._receive_packet(*args)
-
-    def send_data(self, data):
-        d = Deferred()
-        self.queue_out_data.put((data, d))
-        return d
 
     def handle_conv_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        self.queue_in_packets.put([packet, connection, self])
+        self.peer._receive_packet(packet, connection, self)
 
     def handle_out_req_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
@@ -1518,7 +1498,7 @@ class FileSession(object):
             manager = conversation.file_session
             if manager:
                 transfer = yield manager.send_file(element)
-                conversation.ui.notify(
+                conversation.ui.notify_finished_out_file(
                     notifications.FileNotification(
                         'Finished sending "{}" to {}'.format(
                             transfer.element.content,
@@ -1541,7 +1521,7 @@ class FileSession(object):
         if manager:
             transfer = manager.receive_file(element)
             manager.save_received_file(transfer.element.checksum)
-            conversation.ui.notify(
+            conversation.ui.notify_finished_in_file(
                 notifications.FileNotification(
                     'Finished receiving "{}" from {}, saved at {}'.format(
                         transfer.element.content,
@@ -1553,15 +1533,14 @@ class FileSession(object):
                 'Unexpected FileElement received without an active manager')
 
     @property
-    def queue_in_data(self):
-        return self.conversation.queue_in_data
-
-    @property
-    def path_dir(self):
-        return os.path.join(self.conversation.path_dir, 'file-transfer')
+    def _paths(self):
+        return self.conversation._paths.file_transfer_dir
 
     def send_data(self, data):
         return fork(self.connection.send, data)
+
+    def receive_data(self, data, connection=None):
+        self.conversation.receive_data(data, connection)
 
     def stop(self):
         if self.connection:
@@ -1573,11 +1552,11 @@ class FileSession(object):
 
     def create_dir(self):
         self.conversation.create_dir()
-        if not os.path.exists(self.path_dir):
-            os.makedirs(self.path_dir)
+        if not os.path.exists(self._paths.base):
+            os.makedirs(self._paths.base)
 
     def get_default_file_path(self, file_name):
-        return os.path.join(self.path_dir, file_name)
+        return self._paths.join(file_name)
 
     @inlineCallbacks
     def send_request(self, file_path):
@@ -1601,10 +1580,17 @@ class FileSession(object):
     def send_file(self, element):
         transfer = self.out_requests.pop(element.checksum)
         self.out_files[element.checksum] = transfer
-        yield self.conversation.peer._send_element(self.conversation,
-                                                   FileElement(transfer.file_))
-        del self.out_files[element.checksum]
-        returnValue(transfer)
+        try:
+            yield self.conversation.peer._send_element(
+                self.conversation,
+                FileElement(transfer.file_))
+        except:
+            self.out_requests[element.checksum] = transfer
+            raise
+        else:
+            returnValue(transfer)
+        finally:
+            del self.out_files[element.checksum]
 
     def receive_request(self, element):
         if is_valid_file_name(element.content):
@@ -1628,13 +1614,19 @@ class FileSession(object):
             # just check if this file can be opened
             pass
 
-        yield self.conversation.peer._send_element(
-            self.conversation,
-            FileRequestElement(FileRequestElement.request_accepted,
-                               checksum=checksum))
         self.in_files[checksum] = transfer
         del self.in_requests[checksum]
-        returnValue(transfer)
+        try:
+            yield self.conversation.peer._send_element(
+                self.conversation,
+                FileRequestElement(FileRequestElement.request_accepted,
+                                   checksum=checksum))
+        except:
+            self.in_requests[checksum] = transfer
+            del self.in_files[checksum]
+            raise
+        else:
+            returnValue(transfer)
 
     def receive_file(self, element):
         file_ = element.content
@@ -1688,9 +1680,7 @@ class ElementParser(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def _parse_filereq_element(self, element, conversation, connection=None):
-        join(FileSession.parse_request_element(element,
-                                               conversation,
-                                               connection))
+        FileSession.parse_request_element(element, conversation, connection)
 
     def _parse_file_element(self, element, conversation, connection=None):
         FileSession.parse_file_element(element, conversation)
@@ -1707,7 +1697,7 @@ class ElementParser(object):
         Conversation.parse_message_element(element, conversation)
 
     def _parse_auth_element(self, element, conversation, connection=None):
-        join(AuthSession.parse_auth_element(element, conversation))
+        AuthSession.parse_auth_element(element, conversation)
 
     def parse(self, element, conversation, connection=None):
         if element.is_complete:
@@ -1808,7 +1798,7 @@ class _ConversationProtocol(NetstringReceiver, object):
         try:
             if self.type_ in [_ConversationProtocol.type_regular,
                               _ConversationProtocol.type_file]:
-                self.manager.queue_in_data.put([string, self])
+                self.manager.receive_data(string, self)
             elif self.type_ == _ConversationProtocol.type_untalk:
                 self.manager.receive_data(string)
             else:
@@ -1841,164 +1831,6 @@ def get_manager_class(element):
                 if type(element) in manager_class.element_classes][0]
     except IndexError:
         return errors.ManagerNotFoundError(type(element))
-
-
-@attr.s
-class PeerInfo(object):
-    name = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(str)),
-        default=None)
-    port_local_server = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(int)),
-        default=None)
-    identity_keys = attr.ib(
-        validator=attr.validators.optional(
-            attr.validators.instance_of(Keypair)),
-        default=None)
-    onion_service_key = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(str)),
-        default=None)
-    contacts = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(dict)),
-        default=attr.Factory(dict))
-
-
-@attr.s
-class Persistence(object):
-    dbname = attr.ib(validator=attr.validators.instance_of(str))
-    dbpassphrase = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(dict)),
-        default=None)
-    db = attr.ib(init=False)
-
-    def __attrs_post_init__(self):
-        self.db = self._open_db()
-
-    def _open_db(self):
-        db = sqlite3.connect(':memory:', check_same_thread=False)
-        db.row_factory = sqlite3.Row
-
-        with db:
-            try:
-                with open(self.dbname, 'r') as f:
-                    sql = f.read()
-                    db.cursor().executescript(sql)
-            except IOError as e:
-                if e.errno == errno.ENOENT:
-                    self._create_db(db)
-                else:
-                    raise
-        return db
-
-    def _create_db(self, db):
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS
-                peer (
-                    name TEXT,
-                    port_local_server INTEGER,
-                    priv_identity_key TEXT,
-                    pub_identity_key TEXT,
-                    onion_service_key TEXT)''')
-        db.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS
-                peer_name
-            ON
-                peer (name)''')
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS
-                contacts (
-                    identity TEXT,
-                    key TEXT,
-                    is_verified INTEGER,
-                    has_presence INTEGER)''')
-        db.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS
-                contact_identity
-            ON
-                contacts (identity)''')
-
-    def _write_db(self):
-        with self.db as db:
-            sql = bytes('\n'.join(db.iterdump()))
-            with open(self.dbname, 'w') as f:
-                f.write(sql)
-
-    def load_peer_info(self):
-        with self.db as db:
-            cur = db.cursor()
-            cur.execute('''
-                SELECT
-                    *
-                FROM
-                    peer''')
-            row = cur.fetchone()
-        if row:
-            onion_service_key = str(row['onion_service_key'])
-            identity_keys = Keypair(a2b(row['priv_identity_key']),
-                                    a2b(row['pub_identity_key']))
-            port_local_server = int(row['port_local_server'])
-            name = str(row['name'])
-        else:
-            onion_service_key = None
-            identity_keys = None
-            port_local_server = None
-            name = None
-
-        with self.db as db:
-            rows = db.execute('''
-                SELECT
-                    *
-                FROM
-                    contacts''')
-        contacts = dict()
-        for row in rows:
-            c = Contact(str(row['identity']),
-                        a2b(row['key']),
-                        bool(row['is_verified']),
-                        bool(row['has_presence']))
-            contacts[c.name] = c
-
-        return PeerInfo(name, port_local_server, identity_keys,
-                        onion_service_key, contacts)
-
-    def save_peer_info(self, peer_info):
-        with self.db as db:
-            db.execute('''
-                DELETE FROM
-                    peer''')
-            if peer_info.identity_keys:
-                db.execute('''
-                    INSERT INTO
-                        peer (
-                            name,
-                            port_local_server,
-                            priv_identity_key,
-                            pub_identity_key,
-                            onion_service_key)
-                    VALUES (?, ?, ?, ?, ?)''', (
-                        peer_info.name,
-                        peer_info.port_local_server,
-                        b2a(peer_info.identity_keys.priv),
-                        b2a(peer_info.identity_keys.pub),
-                        peer_info.onion_service_key))
-            db.execute('''
-                DELETE FROM
-                    contacts''')
-            for c in peer_info.contacts.values():
-                db.execute('''
-                    INSERT INTO
-                        contacts (
-                            identity,
-                            key,
-                            is_verified,
-                            has_presence)
-                    VALUES (?, ?, ?, ?)''', (
-                        c.identity,
-                        b2a(c.key),
-                        int(c.is_verified),
-                        int(c.has_presence)))
-
-        self._write_db()
 
 
 def keyed_hash(key, data):

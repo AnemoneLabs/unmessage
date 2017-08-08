@@ -142,17 +142,19 @@ class Gui(Tk.Tk, PeerUi):
                   local_mode=False):
         self.notebook.add(self.bootstrap_tab, text='Bootstrap')
 
-        self.peer = Peer(name, self.reactor, ui=self)
+        self.peer = Peer.from_disk(name,
+                                   self.reactor,
+                                   ui=self,
+                                   begin_log=True,
+                                   begin_log_std=True,
+                                   log_level=LogLevel.debug)
         try:
             notification = yield self.peer.start(local_server_ip,
                                                  local_server_port,
                                                  launch_tor,
                                                  tor_socks_port,
                                                  tor_control_port,
-                                                 local_mode,
-                                                 begin_log=True,
-                                                 begin_log_std=True,
-                                                 log_level=LogLevel.debug)
+                                                 local_mode)
         except Exception as e:
             self.notify_peer_failed(
                 errors.UnmessageError(title=str(type(e)), message=str(e)))

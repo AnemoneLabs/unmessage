@@ -38,6 +38,12 @@ class ConversationUi(_Ui):
     def notify_in_file_request(self, notification):
         pass
 
+    def notify_finished_in_file(self, notification):
+        pass
+
+    def notify_finished_out_file(self, notification):
+        pass
+
 
 class PeerUi(_Ui):
     def notify_bootstrap(self, notification):

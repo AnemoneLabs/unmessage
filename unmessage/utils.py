@@ -31,6 +31,30 @@ def join(d):
         return results[0]
 
 
+def default_factory_attrib(factory, init=False, takes_self=True):
+    return attr.ib(init=False,
+                   default=attr.Factory(factory, takes_self=takes_self))
+
+
+@attr.s
+class Paths(object):
+    head = attr.ib(validator=attr.validators.instance_of(str))
+    tail = attr.ib(validator=attr.validators.instance_of(str))
+
+    def __str__(self):
+        return self.base
+
+    @property
+    def base(self):
+        return os.path.join(self.head, self.tail)
+
+    def join(self, *args):
+        return os.path.join(self.base, *args)
+
+    def to_new(self, new_tail):
+        return Paths(self.base, new_tail)
+
+
 @attr.s
 class Address(object):
     host = attr.ib(attr.validators.instance_of(str))
