@@ -14,15 +14,18 @@ def test_send_file(out_contents, out_path, in_path, peers,
 
     out_hash = hash_(out_contents)
 
-    d_out = Deferred()
-    conv_a.ui.notify_finished_out_file = callback_side_effect(d_out)
-    d_in = Deferred()
-    conv_b.ui.notify_finished_in_file = callback_side_effect(d_in)
+    d_req_in = Deferred()
+    conv_b.ui.notify_in_file_request = callback_side_effect(d_req_in)
+    d_file_out = Deferred()
+    conv_a.ui.notify_finished_out_file = callback_side_effect(d_file_out)
+    d_file_in = Deferred()
+    conv_b.ui.notify_finished_in_file = callback_side_effect(d_file_in)
 
     yield peer_a.send_file(peer_b.name, out_path)
+    yield d_req_in
     yield peer_b.accept_file(peer_a.name, b2a(out_hash), in_path)
-    yield d_out
-    yield d_in
+    yield d_file_out
+    yield d_file_in
 
     in_contents = open(in_path, 'r').read()
     assert in_contents == out_contents
