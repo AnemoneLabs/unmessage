@@ -1580,10 +1580,17 @@ class FileSession(object):
     def send_file(self, element):
         transfer = self.out_requests.pop(element.checksum)
         self.out_files[element.checksum] = transfer
-        yield self.conversation.peer._send_element(self.conversation,
-                                                   FileElement(transfer.file_))
-        del self.out_files[element.checksum]
-        returnValue(transfer)
+        try:
+            yield self.conversation.peer._send_element(
+                self.conversation,
+                FileElement(transfer.file_))
+        except:
+            self.out_requests[element.checksum] = transfer
+            raise
+        else:
+            returnValue(transfer)
+        finally:
+            del self.out_files[element.checksum]
 
     def receive_request(self, element):
         if is_valid_file_name(element.content):
@@ -1607,13 +1614,19 @@ class FileSession(object):
             # just check if this file can be opened
             pass
 
-        yield self.conversation.peer._send_element(
-            self.conversation,
-            FileRequestElement(FileRequestElement.request_accepted,
-                               checksum=checksum))
         self.in_files[checksum] = transfer
         del self.in_requests[checksum]
-        returnValue(transfer)
+        try:
+            yield self.conversation.peer._send_element(
+                self.conversation,
+                FileRequestElement(FileRequestElement.request_accepted,
+                                   checksum=checksum))
+        except:
+            self.in_requests[checksum] = transfer
+            del self.in_files[checksum]
+            raise
+        else:
+            returnValue(transfer)
 
     def receive_file(self, element):
         file_ = element.content
