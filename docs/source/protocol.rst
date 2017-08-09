@@ -321,7 +321,7 @@ This information is sent in a **regular packet**:
 .. code-block:: text
 
     +------------------------------------------------+
-    | Reply packet (192 + payload)                   |
+    | Regular packet (192 + payload)                 |
     +------------------------------------------------+
     | IV (8)                                         |
     | IV Hash (32)                                   |

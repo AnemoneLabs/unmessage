@@ -58,7 +58,7 @@ Use a *virtual environment*::
 
     $ virtualenv ~/unmessage-env      # create
     $ . ~/unmessage-env/bin/activate  # activate
-    (unmessage-env)$                  # prompt shows which environtment is active
+    (unmessage-env)$                  # prompt shows which environment is active
 
 Update *setuptools*, *pip* and *virtualenv*::
 

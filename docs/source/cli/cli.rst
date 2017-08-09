@@ -146,7 +146,7 @@ conversation authentication levels:
 
 1. Unverified Conversation (red)
 2. Verified Conversation (green)
-3. Athenticated Conversation (cyan)
+3. Authenticated Conversation (cyan)
 
 When the conversation is established, its level is
 **Unverified Conversation** because unMessage does not know if you
@@ -157,7 +157,7 @@ to **Verified Conversation** and it persists for as long the
 **conversation** exists.
 
 If you follow the :ref:`sec-cli-authenticating` section, the
-level changes to **Athenticated Conversation** and it persists for as
+level changes to **Authenticated Conversation** and it persists for as
 long the **session** exists. Once the **session** is over, the level
 drops to the identity key's verification level:
 **Unverified**/**Verified**.
