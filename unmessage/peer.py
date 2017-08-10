@@ -507,16 +507,12 @@ class Peer(object):
         element.sender = self.name
         element.receiver = conv.contact.name
 
-        packet = packets.ElementPacket(element.type_,
-                                       payload=element.serialize())
+        partial = elements.PartialElement.from_element(element)
 
         manager = yield self._get_active_manager(element, conv)
-        yield self._send_packet(packet, manager, conv, handshake_key)
-        partial = self._process_element_packet(
-            packet,
-            conv,
-            sender=element.sender,
-            receiver=element.receiver)
+
+        for packet in partial.to_packets():
+            yield self._send_packet(packet, manager, conv, handshake_key)
 
         returnValue((partial, conv))
 

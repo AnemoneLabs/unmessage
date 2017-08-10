@@ -4,8 +4,25 @@ import attr
 from nacl.utils import random
 from pyaxo import b2a
 
+from .packets import ElementPacket
+
 
 class PartialElement(dict):
+    @classmethod
+    def from_element(cls, element, id_=None, max_len=None):
+        id_ = id_ or get_random_id()
+        parts = list()
+        if max_len is None:
+            parts.append(element.serialize())
+        else:
+            # TODO split the element (#59)
+            raise Exception('Not implemented')
+        partial = cls(element.sender, element.receiver,
+                      element.type_, id_, len(parts))
+        for part_num, part in enumerate(parts):
+            partial[part_num] = parts[part_num]
+        return partial
+
     @classmethod
     def from_packet(cls, packet, sender, receiver):
         partial = cls(sender, receiver,
@@ -26,6 +43,16 @@ class PartialElement(dict):
     @property
     def is_complete(self):
         return len(self) == self.part_len
+
+    def to_packets(self):
+        packets = list()
+        for part_num, part in self.items():
+            packets.append(ElementPacket(self.type_,
+                                         part,
+                                         self.id_,
+                                         part_num,
+                                         self.part_len))
+        return packets
 
     def to_element(self):
         element = Element.build(self.type_, str(self))
