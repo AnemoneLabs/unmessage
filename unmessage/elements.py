@@ -24,7 +24,7 @@ class PartialElement(dict):
         return partial
 
     @classmethod
-    def from_packet(cls, packet, sender, receiver):
+    def from_packet(cls, packet, sender=None, receiver=None):
         partial = cls(sender, receiver,
                       packet.type_, packet.id_, packet.part_len)
         partial[packet.part_num] = packet.payload
