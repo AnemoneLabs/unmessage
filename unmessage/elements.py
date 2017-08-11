@@ -66,6 +66,8 @@ class Element(object):
     element_classes = None
     filtered_attr_names = ['content']
 
+    type_ = 'elmt'
+
     content = attr.ib(default=None)
     sender = attr.ib(default=None)
     receiver = attr.ib(default=None)
@@ -80,7 +82,8 @@ class Element(object):
     @classmethod
     def get_element_classes(cls):
         if not cls.element_classes:
-            cls.element_classes = {c.type_: c for c in cls.__subclasses__()}
+            cls.element_classes = {c.type_: c
+                                   for c in cls.__subclasses__() + [cls]}
         return cls.element_classes
 
     @classmethod
