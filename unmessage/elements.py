@@ -19,7 +19,18 @@ def raise_incomplete(f):
     return wrapped_f
 
 
+@attr.s
 class PartialElement(dict):
+    type_ = attr.ib(validator=attr.validators.instance_of(str))
+    id_ = attr.ib(validator=attr.validators.instance_of(str))
+    part_len = attr.ib(validator=attr.validators.instance_of(int))
+    sender = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    receiver = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+
     @classmethod
     def from_element(cls, element, id_=None, max_len=None):
         id_ = id_ or get_random_id()
@@ -29,25 +40,18 @@ class PartialElement(dict):
         else:
             # TODO split the element (#59)
             raise Exception('Not implemented')
-        partial = cls(element.sender, element.receiver,
-                      element.type_, id_, len(parts))
+        partial = cls(element.type_, id_, len(parts),
+                      element.sender, element.receiver)
         for part_num, part in enumerate(parts):
             partial[part_num] = parts[part_num]
         return partial
 
     @classmethod
     def from_packet(cls, packet, sender=None, receiver=None):
-        partial = cls(sender, receiver,
-                      packet.type_, packet.id_, packet.part_len)
+        partial = cls(packet.type_, packet.id_, packet.part_len,
+                      sender, receiver)
         partial[packet.part_num] = packet.payload
         return partial
-
-    def __init__(self, sender, receiver, type_, id_, part_len):
-        self.sender = sender
-        self.receiver = receiver
-        self.type_ = type_
-        self.id_ = id_
-        self.part_len = part_len
 
     @raise_incomplete
     def __str__(self):
