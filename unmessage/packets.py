@@ -156,7 +156,7 @@ class ElementPacket(object):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
     payload = attr.ib(validator=attr.validators.instance_of(str))
     id_ = attr.ib(validator=attr.validators.instance_of(str))
-    part_num = attr.ib(default=1, convert=int)
+    part_num = attr.ib(default=0, convert=int)
     part_len = attr.ib(default=1, convert=int)
 
     @classmethod
