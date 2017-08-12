@@ -58,6 +58,14 @@ class InactiveManagerError(UnmessageError):
                      '{}'.format(contact)))
 
 
+class IncompleteElementError(UnmessageError):
+    def __init__(self):
+        super(IncompleteElementError, self).__init__(
+            title='Incomplete element error',
+            message=('The partial element does not contain enough parts to '
+                     'create a complete element'))
+
+
 class InvalidElementError(UnmessageError):
     def __init__(self):
         super(InvalidElementError, self).__init__(

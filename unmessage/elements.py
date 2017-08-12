@@ -1,10 +1,22 @@
 import json
+from functools import wraps
 
 import attr
 from nacl.utils import random
 from pyaxo import b2a
 
+from . import errors
 from .packets import ElementPacket
+
+
+def raise_incomplete(f):
+    @wraps(f)
+    def wrapped_f(self, *args, **kwargs):
+        if self.is_complete:
+            return f(self, *args, **kwargs)
+        else:
+            raise errors.IncompleteElementError()
+    return wrapped_f
 
 
 class PartialElement(dict):
@@ -37,6 +49,7 @@ class PartialElement(dict):
         self.id_ = id_
         self.part_len = part_len
 
+    @raise_incomplete
     def __str__(self):
         return ''.join(self.values())
 
@@ -44,6 +57,7 @@ class PartialElement(dict):
     def is_complete(self):
         return len(self) == self.part_len
 
+    @raise_incomplete
     def to_packets(self):
         packets = list()
         for part_num, part in self.items():
