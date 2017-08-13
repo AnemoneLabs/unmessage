@@ -89,12 +89,22 @@ def serialized_payload(content):
 
 
 @pytest.fixture
-def file_request_serialized_payload(content):
+def file_size():
+    return 1
+
+
+@pytest.fixture
+def file_checksum():
+    return b2a(hash_(''))
+
+
+@pytest.fixture
+def file_request_serialized_payload(content, file_size, file_checksum):
     return ('{{'
             '"content": "{}", '
             '"checksum": "{}", '
-            '"size": 1'
-            '}}'.format(content, b2a(hash_(''))))
+            '"size": {}'
+            '}}'.format(content, file_checksum, file_size))
 
 
 @pytest.fixture
