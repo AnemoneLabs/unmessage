@@ -1,9 +1,9 @@
 import pytest
-from pyaxo import hash_, b2a
+from pyaxo import hash_, a2b, b2a
 
 from unmessage import errors
 from unmessage.elements import Element, FileRequestElement, PartialElement
-from unmessage.elements import get_random_id
+from unmessage.elements import ID_LENGTH, get_random_id
 from unmessage.packets import ElementPacket
 
 
@@ -66,6 +66,16 @@ def test_incomplete_partial_from_packet(packet):
         str(partial)
     with pytest.raises(errors.IncompleteElementError):
         partial.to_packets()
+
+
+def test_element_id(id_):
+    assert len(a2b(id_)) == ID_LENGTH
+
+
+def test_get_random_element_id():
+    id_0 = get_random_id()
+    id_1 = get_random_id()
+    assert id_1 != id_0
 
 
 @pytest.fixture
