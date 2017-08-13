@@ -1,7 +1,9 @@
 import pytest
+from pyaxo import hash_, b2a
 
 from unmessage import errors
-from unmessage.elements import Element, PartialElement, get_random_id
+from unmessage.elements import Element, FileRequestElement, PartialElement
+from unmessage.elements import get_random_id
 from unmessage.packets import ElementPacket
 
 
@@ -16,6 +18,22 @@ def test_deserialize_element_payload(content, serialized_payload):
 
 def test_serialize_deserialize_element_payload(element):
     assert Element.deserialize(element.serialize()) == element
+
+
+ELEMENT_CLASSES = Element.__subclasses__()
+ELEMENT_CLASSES_IDS = [cls.__name__ for cls in ELEMENT_CLASSES]
+
+
+@pytest.mark.parametrize('cls', ELEMENT_CLASSES, ids=ELEMENT_CLASSES_IDS)
+def test_element_factory(cls,
+                         serialized_payload, file_request_serialized_payload):
+    if cls is FileRequestElement:
+        payload = file_request_serialized_payload
+    else:
+        payload = serialized_payload
+    e = Element.build(cls.type_, payload)
+    assert isinstance(e, cls)
+    assert e.serialize() == payload
 
 
 def test_single_partial_from_element(element, id_):
@@ -58,6 +76,15 @@ def content():
 @pytest.fixture
 def serialized_payload(content):
     return '{{"content": "{}"}}'.format(content)
+
+
+@pytest.fixture
+def file_request_serialized_payload(content):
+    return ('{{'
+            '"content": "{}", '
+            '"checksum": "{}", '
+            '"size": 1'
+            '}}'.format(content, b2a(hash_(''))))
 
 
 @pytest.fixture
