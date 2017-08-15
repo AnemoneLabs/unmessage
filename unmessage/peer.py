@@ -353,11 +353,13 @@ class Peer(object):
             if c.contact.has_presence:
                 if (offline and c.is_active or
                         not offline and not c.is_active):
+                    self.log.info('Sending {status} presence to '
+                                  '{contact.name}',
+                                  status=status,
+                                  contact=c.contact)
+
                     d = self._send_element(c, PresenceElement(status))
                     deferreds.append(d)
-
-        if deferreds:
-            self.log.info('Sending {status} presence', status=status)
 
         return deferreds
 
