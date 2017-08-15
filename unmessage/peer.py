@@ -482,10 +482,13 @@ class Peer(object):
         self._contacts[conv.contact.name] = conv.contact
         self._conversations[conv.contact.name] = conv
 
+    @classmethod
+    def _get_conv_established_notification(cls, conversation):
         return notifications.ConversationNotification(
-            conv,
+            conversation,
             title='Conversation established',
-            message='You can now chat with {}'.format(conv.contact.name))
+            message='You can now chat with '
+                    '{}'.format(conversation.contact.name))
 
     def _delete_conversation(self, conversation):
         conversation.close()
@@ -794,20 +797,19 @@ class Peer(object):
                 raise errors.InvalidNameError()
 
         handshake_keys = pyaxo.generate_keypair()
-        notification = self._init_conv(
-            conv,
-            priv_handshake_key=handshake_keys.priv,
-            other_handshake_key=a2b(
-                request.packet.handshake_packet.handshake_key),
-            other_ratchet_key=a2b(
-                request.packet.handshake_packet.ratchet_key),
-            mode=True)
+        self._init_conv(conv,
+                        priv_handshake_key=handshake_keys.priv,
+                        other_handshake_key=a2b(
+                            request.packet.handshake_packet.handshake_key),
+                        other_ratchet_key=a2b(
+                            request.packet.handshake_packet.ratchet_key),
+                        mode=True)
 
         yield self._send_element(
             conv,
             RequestElement(RequestElement.request_accepted),
             handshake_key=handshake_keys.pub)
-        returnValue(notification)
+        returnValue(Peer._get_conv_established_notification(conv))
 
     @inlineCallbacks
     def _untalk(self, conversation, input_device=None, output_device=None):
@@ -1283,12 +1285,12 @@ class Conversation(object):
                 e.message += ' - decryption failed'
                 raise e
 
-            notification = self.peer._init_conv(
-                self,
-                priv_handshake_key=req.handshake_keys.priv,
-                other_handshake_key=handshake_key,
-                ratchet_keys=req.ratchet_keys)
-            self.peer._ui.notify_conv_established(notification)
+            self.peer._init_conv(self,
+                                 priv_handshake_key=req.handshake_keys.priv,
+                                 other_handshake_key=handshake_key,
+                                 ratchet_keys=req.ratchet_keys)
+            self.peer._ui.notify_conv_established(
+                Peer._get_conv_established_notification(req.conversation))
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
