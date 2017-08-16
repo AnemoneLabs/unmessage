@@ -343,25 +343,32 @@ class Peer(object):
                             consumeErrors=True)
 
     def _send_presence(self, offline=False):
+        deferreds = list()
+
+        for element, conversation in self._prepare_presence(offline):
+            if (offline and conversation.is_active or
+                    not offline and not conversation.is_active):
+                self.log.info('Sending {status} presence to {contact.name}',
+                              status=str(element),
+                              contact=conversation.contact)
+                d = self._send_element(conversation, element)
+                deferreds.append(d)
+
+        return deferreds
+
+    def _prepare_presence(self, offline=False):
         if offline:
             status = PresenceElement.status_offline
         else:
             status = PresenceElement.status_online
-        deferreds = list()
+        presence_elements = list()
 
-        for c in self.conversations:
-            if c.contact.has_presence:
-                if (offline and c.is_active or
-                        not offline and not c.is_active):
-                    self.log.info('Sending {status} presence to '
-                                  '{contact.name}',
-                                  status=status,
-                                  contact=c.contact)
+        for conversation in self.conversations:
+            if conversation.contact.has_presence:
+                presence_elements.append(
+                    (PresenceElement(status), conversation))
 
-                    d = self._send_element(c, PresenceElement(status))
-                    deferreds.append(d)
-
-        return deferreds
+        return presence_elements
 
     def _add_intro_manager(self, connection):
         manager = Introduction(self, connection)
@@ -784,12 +791,11 @@ class Peer(object):
                 message='{} has received your request'.format(identity))
             returnValue(notification)
 
-    @inlineCallbacks
-    def _accept_request(self, request, new_name=None):
-        conv = request.conversation
+    def _prepare_accept_request(self, request, new_name=None):
+        conversation = request.conversation
 
         if new_name:
-            contact = conv.contact
+            contact = conversation.contact
             identity = contact.identity.replace(contact.name, new_name, 1)
             if is_valid_identity(identity):
                 contact.identity = identity
@@ -797,7 +803,7 @@ class Peer(object):
                 raise errors.InvalidNameError()
 
         handshake_keys = pyaxo.generate_keypair()
-        self._init_conv(conv,
+        self._init_conv(conversation,
                         priv_handshake_key=handshake_keys.priv,
                         other_handshake_key=a2b(
                             request.packet.handshake_packet.handshake_key),
@@ -805,11 +811,7 @@ class Peer(object):
                             request.packet.handshake_packet.ratchet_key),
                         mode=True)
 
-        yield self._send_element(
-            conv,
-            RequestElement(RequestElement.request_accepted),
-            handshake_key=handshake_keys.pub)
-        returnValue(Peer._get_conv_established_notification(conv))
+        return RequestElement(RequestElement.request_accepted), handshake_keys
 
     @inlineCallbacks
     def _untalk(self, conversation, input_device=None, output_device=None):
@@ -861,10 +863,13 @@ class Peer(object):
 
     @inlineCallbacks
     def _send_message(self, conversation, plaintext):
-        element = MessageElement(plaintext)
+        element = self._prepare_message(plaintext)
         yield self._send_element(conversation, element)
         notification = notifications.ElementNotification(element)
         returnValue(notification)
+
+    def _prepare_message(self, message):
+        return MessageElement(message)
 
     @inlineCallbacks
     def _send_file(self, conversation, file_path):
@@ -894,22 +899,27 @@ class Peer(object):
 
     @inlineCallbacks
     def _authenticate(self, conversation, secret):
-        auth_session = conversation.auth_session
-        if not auth_session or auth_session.is_waiting or \
-                auth_session.is_authenticated is not None:
-            auth_session = conversation.init_auth()
-        # TODO maybe use locks or something to prevent advancing or restarting
-        # while the SMP is doing its math
-        yield self._send_element(
-            conversation,
-            AuthenticationElement(auth_session.start(
-                conversation.keys.auth_secret_key + secret)))
+        element, auth_session = self._prepare_authentication(conversation,
+                                                             secret)
+        yield self._send_element(conversation, element)
         if conversation.auth_session.is_waiting:
             notification = notifications.UnmessageNotification(
                 title='Authentication started',
                 message='Waiting for {} to advance'.format(
                     conversation.contact.name))
             returnValue(notification)
+
+    def _prepare_authentication(self, conversation, secret):
+        # TODO maybe use locks or something to prevent advancing or restarting
+        # while the SMP is doing its math
+        auth_session = conversation.auth_session
+        if (not auth_session or auth_session.is_waiting or
+                auth_session.is_authenticated is not None):
+            auth_session = conversation.init_auth()
+        element = AuthenticationElement(
+            conversation.auth_session.start(
+                conversation.keys.auth_secret_key + secret))
+        return element, auth_session
 
     def get_contact(self, name):
         return self.get_conversation(name).contact
@@ -1006,9 +1016,14 @@ class Peer(object):
     @inlineCallbacks
     def accept_request(self, identity, new_name=None):
         request = self._inbound_requests[identity]
-        notification = yield self._accept_request(request, new_name)
+        element, handshake_keys = yield self._prepare_accept_request(request,
+                                                                     new_name)
+        yield self._send_element(request.conversation,
+                                 element,
+                                 handshake_key=handshake_keys.pub)
         del self._inbound_requests[identity]
-        returnValue(notification)
+        returnValue(
+            Peer._get_conv_established_notification(request.conversation))
 
     def delete_conversation(self, name):
         self._delete_conversation(self.get_conversation(name))
@@ -1551,6 +1566,17 @@ class FileSession(object):
 
     @inlineCallbacks
     def send_request(self, file_path):
+        element, file_transfer = self.prepare_request(file_path)
+        self.out_requests[element.checksum] = file_transfer
+        try:
+            yield self.conversation.peer._send_element(self.conversation,
+                                                       element)
+        except:
+            del self.out_requests[element.checksum]
+            raise
+        returnValue(file_transfer)
+
+    def prepare_request(self, file_path):
         _, file_name = os.path.split(file_path)
         if is_valid_file_name(file_name):
             with open(os.path.expanduser(file_path), 'rb') as f:
@@ -1559,22 +1585,19 @@ class FileSession(object):
             element = FileRequestElement(content=file_name,
                                          size=len(file_),
                                          checksum=checksum)
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
             file_transfer = FileTransfer(element, b2a(file_))
-            self.out_requests[checksum] = file_transfer
-            returnValue(file_transfer)
+            return element, file_transfer
         else:
             raise errors.InvalidFileNameError()
 
     @inlineCallbacks
     def send_file(self, checksum):
-        transfer = self.out_requests.pop(checksum)
+        element, transfer = self.prepare_file(checksum)
+        del self.out_requests[checksum]
         self.out_files[checksum] = transfer
         try:
-            yield self.conversation.peer._send_element(
-                self.conversation,
-                FileElement(transfer.file_))
+            yield self.conversation.peer._send_element(self.conversation,
+                                                       element)
         except:
             self.out_requests[checksum] = transfer
             raise
@@ -1582,6 +1605,11 @@ class FileSession(object):
             returnValue(transfer)
         finally:
             del self.out_files[checksum]
+
+    def prepare_file(self, checksum):
+        transfer = self.out_requests[checksum]
+        element = FileElement(transfer.file_)
+        return element, transfer
 
     def receive_request(self, element):
         if is_valid_file_name(element.content):
@@ -1593,6 +1621,20 @@ class FileSession(object):
 
     @inlineCallbacks
     def accept_request(self, checksum, file_path=None):
+        element, transfer = self.prepare_accept(checksum, file_path)
+        self.in_files[checksum] = transfer
+        del self.in_requests[checksum]
+        try:
+            yield self.conversation.peer._send_element(self.conversation,
+                                                       element)
+        except:
+            self.in_requests[checksum] = transfer
+            del self.in_files[checksum]
+            raise
+        else:
+            returnValue(transfer)
+
+    def prepare_accept(self, checksum, file_path=None):
         transfer = self.in_requests[checksum]
 
         if file_path:
@@ -1605,19 +1647,9 @@ class FileSession(object):
             # just check if this file can be opened
             pass
 
-        self.in_files[checksum] = transfer
-        del self.in_requests[checksum]
-        try:
-            yield self.conversation.peer._send_element(
-                self.conversation,
-                FileRequestElement(FileRequestElement.request_accepted,
-                                   checksum=checksum))
-        except:
-            self.in_requests[checksum] = transfer
-            del self.in_files[checksum]
-            raise
-        else:
-            returnValue(transfer)
+        element = FileRequestElement(FileRequestElement.request_accepted,
+                                     checksum=checksum)
+        return element, transfer
 
     def receive_file(self, element):
         file_ = element.content
