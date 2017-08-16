@@ -1,6 +1,9 @@
+import os
+
 import pytest
 from twisted.internet.defer import Deferred
 
+from unmessage import elements
 from unmessage.peer import b2a
 from pyaxo import hash_
 
@@ -28,6 +31,50 @@ def test_send_file(out_contents, out_hash, out_path, in_path, peers,
     in_contents = open(in_path, 'r').read()
     assert in_contents == out_contents
     assert hash_(in_contents) == out_hash
+
+
+@pytest.inlineCallbacks
+def test_prepare_file_request(out_contents, out_hash, out_path, in_path,
+                              peers):
+    peer_a, _, conv_a, _ = yield peers
+
+    _, file_name = os.path.split(out_path)
+
+    manager = conv_a.init_file()
+    element, _ = manager.prepare_request(out_path)
+
+    assert isinstance(element, elements.FileRequestElement)
+    assert element.content == file_name
+    assert element.size == len(out_contents)
+    assert element.checksum == b2a(out_hash)
+
+
+@pytest.inlineCallbacks
+def test_prepare_file_accept(out_contents, out_hash, out_path, in_path, peers):
+    peer_a, peer_b, _, conv_b = yield peers
+
+    yield peer_a.send_file(peer_b.name, out_path)
+
+    manager = conv_b.file_session
+    element, _ = manager.prepare_accept(b2a(out_hash))
+
+    assert isinstance(element, elements.FileRequestElement)
+    assert element.content == elements.FileRequestElement.request_accepted
+    assert element.size is None
+    assert element.checksum == b2a(out_hash)
+
+
+@pytest.inlineCallbacks
+def test_prepare_file(out_contents, out_hash, out_path, in_path, peers):
+    peer_a, peer_b, conv_a, _ = yield peers
+
+    yield peer_a.send_file(peer_b.name, out_path)
+
+    manager = conv_a.file_session
+    element, _ = manager.prepare_file(b2a(out_hash))
+
+    assert isinstance(element, elements.FileElement)
+    assert element.content == b2a(out_contents.decode('ascii'))
 
 
 @pytest.fixture

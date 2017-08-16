@@ -2,6 +2,7 @@ import pytest
 from twisted.internet import defer
 from twisted.internet.defer import Deferred
 
+from unmessage import elements
 from unmessage.contact import Contact
 from unmessage.peer import b2a, Conversation, Peer
 
@@ -43,6 +44,18 @@ def test_establish_conversation(peer_a, peer_b, mocker):
 
 
 @pytest.inlineCallbacks
+def test_prepare_accept_request(peer_a, peer_b, mocker):
+    attach(peer_a, peer_b, mocker)
+
+    yield peer_b.send_request(peer_a.identity, b2a(peer_a.identity_keys.pub))
+    request = peer_a._inbound_requests[peer_b.identity]
+    element, _ = peer_a._prepare_accept_request(request)
+
+    assert isinstance(element, elements.RequestElement)
+    assert str(element) == elements.RequestElement.request_accepted
+
+
+@pytest.inlineCallbacks
 def test_established_peers(peers):
     peer_a, peer_b, conv_a, conv_b = yield peers
 
@@ -75,6 +88,29 @@ def test_send_presence(peers, callback_side_effect):
     assert conv_b.is_active
 
 
+PRESENCE_STATUSES = {elements.PresenceElement.status_offline: True,
+                     elements.PresenceElement.status_online: False}
+
+
+@pytest.inlineCallbacks
+@pytest.mark.parametrize('status',
+                         PRESENCE_STATUSES.values(),
+                         ids=PRESENCE_STATUSES.keys())
+def test_prepare_presence(status, peers):
+    peer_a, peer_b, conv_a, _ = yield peers
+
+    peer_a.set_presence(peer_b.name, enable=True)
+
+    presence_elements = peer_a._prepare_presence(status)
+    peer_b_presence_element, peer_b_presence_conv = presence_elements[0]
+    contents = {v: k for k, v in PRESENCE_STATUSES.items()}
+
+    assert peer_b_presence_conv == conv_a
+    assert len(presence_elements) == 1
+    assert isinstance(peer_b_presence_element, elements.PresenceElement)
+    assert str(peer_b_presence_element) == contents[status]
+
+
 @pytest.inlineCallbacks
 def test_send_message(peers, callback_side_effect):
     peer_a, peer_b, _, conv_b = yield peers
@@ -86,6 +122,16 @@ def test_send_message(peers, callback_side_effect):
     yield peer_a.send_message(peer_b.name, sent_message)
     received_message = yield d
     assert str(received_message) == sent_message
+
+
+@pytest.inlineCallbacks
+def test_prepare_message(peers):
+    peer_a, peer_b, _, _ = yield peers
+
+    sent_message = 'message'
+    element = peer_a._prepare_message(sent_message)
+    assert isinstance(element, elements.MessageElement)
+    assert str(element) == sent_message
 
 
 SECRETS = [('secret', 'secret'),
@@ -117,3 +163,13 @@ def test_authenticate(secrets, peers, callback_side_effect):
 
     assert conv_a.is_authenticated is authenticated
     assert conv_b.is_authenticated is authenticated
+
+
+@pytest.inlineCallbacks
+def test_prepare_authentication(peers):
+    peer_a, peer_b, conv_a, _ = yield peers
+
+    secret = 'secret'
+    conv_a.init_auth()
+    element, _ = peer_a._prepare_authentication(conv_a, secret)
+    assert isinstance(element, elements.AuthenticationElement)
