@@ -1196,7 +1196,7 @@ class Conversation(object):
                                         self.contact.name)
 
     @classmethod
-    def parse_presence_element(cls, element, conversation):
+    def parse_presence_element(cls, element, conversation, connection=None):
         notification = notifications.UnmessageNotification(
             '{} is {}'.format(conversation.contact.name, str(element)))
         if str(element) == PresenceElement.status_online:
@@ -1206,7 +1206,7 @@ class Conversation(object):
             conversation.ui.notify_offline(notification)
 
     @classmethod
-    def parse_message_element(cls, element, conversation):
+    def parse_message_element(cls, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
 
@@ -1405,7 +1405,7 @@ class AuthSession(object):
 
     @classmethod
     @inlineCallbacks
-    def parse_auth_element(cls, element, conversation):
+    def parse_auth_element(cls, element, conversation, connection=None):
         buffer_ = str(element)
         try:
             next_buffer = conversation.auth_session.advance(buffer_)
@@ -1521,7 +1521,7 @@ class FileSession(object):
             raise errors.InvalidElementError()
 
     @classmethod
-    def parse_file_element(cls, element, conversation):
+    def parse_file_element(cls, element, conversation, connection=None):
         raise_if_not(FileElement.is_valid_file,
                      errors.InvalidElementError)(value=element)
 
