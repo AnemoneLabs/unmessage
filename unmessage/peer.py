@@ -1488,7 +1488,7 @@ class FileSession(object):
         elif FileRequestElement.is_valid_accept(element):
             manager = conversation.file_session
             if manager:
-                transfer = yield manager.send_file(element)
+                transfer = yield manager.send_file(element.checksum)
                 conversation.ui.notify_finished_out_file(
                     notifications.FileNotification(
                         'Finished sending "{}" to {}'.format(
@@ -1568,20 +1568,20 @@ class FileSession(object):
             raise errors.InvalidFileNameError()
 
     @inlineCallbacks
-    def send_file(self, element):
-        transfer = self.out_requests.pop(element.checksum)
-        self.out_files[element.checksum] = transfer
+    def send_file(self, checksum):
+        transfer = self.out_requests.pop(checksum)
+        self.out_files[checksum] = transfer
         try:
             yield self.conversation.peer._send_element(
                 self.conversation,
                 FileElement(transfer.file_))
         except:
-            self.out_requests[element.checksum] = transfer
+            self.out_requests[checksum] = transfer
             raise
         else:
             returnValue(transfer)
         finally:
-            del self.out_files[element.checksum]
+            del self.out_files[checksum]
 
     def receive_request(self, element):
         if is_valid_file_name(element.content):
