@@ -604,12 +604,20 @@ class Peer(object):
             e.title += ' caused by "{}"'.format(conversation.contact.name)
             self.peer.notify_error(e)
         else:
-            element = self._process_element_packet(
+            partial = self._process_element_packet(
                 packet=regular_packet,
                 conversation=conversation,
                 sender=conversation.contact.name,
                 receiver=self.name)
-            self._element_parser.parse(element, conversation, connection)
+            if partial.is_complete:
+                # it can be parsed as all parts have been added to the
+                # ``PartialElement`` or it is composed of a single part
+                self._element_parser.parse(partial.to_element(),
+                                           conversation,
+                                           connection)
+            else:
+                # the ``PartialElement`` has parts yet to be received
+                pass
 
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
@@ -1700,33 +1708,23 @@ class ElementParser(object):
         AuthSession.parse_auth_element(element, conversation)
 
     def parse(self, element, conversation, connection=None):
-        if element.is_complete:
-            self.log.debug('Parsing element of type: {element.__class__}',
-                           element=element.to_element())
-
-            # it can be parsed as all parts have been added to the
-            # ``PartialElement`` or it is composed of a single part
-            try:
-                method = getattr(self,
-                                 '_parse_{}_element'.format(element.type_))
-            except AttributeError:
-                # TODO handle elements with unknown types
-                pass
-            else:
-                try:
-                    method(element.to_element(), conversation, connection)
-                except Exception as e:
-                    message = ('Error while parsing element from {} in '
-                               '"{}"'.format(conversation.contact.name,
-                                             method))
-                    if e.message:
-                        message += ' - ' + e.message
-                    e.message = message
-                    self.peer._notify_error(conversation, Failure(e))
-        else:
-            # the ``PartialElement`` has parts yet to be
-            # transmitted (sent/received)
+        self.log.debug('Parsing element of type: {element.__class__}',
+                       element=element)
+        try:
+            method = getattr(self, '_parse_{}_element'.format(element.type_))
+        except AttributeError:
+            # TODO handle elements with unknown types
             pass
+        else:
+            try:
+                method(element, conversation, connection)
+            except Exception as e:
+                message = ('Error while parsing element from {} in '
+                           '"{}"'.format(conversation.contact.name, method))
+                if e.message:
+                    message += ' - ' + e.message
+                e.message = message
+                self.peer._notify_error(conversation, Failure(e))
 
 
 @attr.s
