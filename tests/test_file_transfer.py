@@ -8,11 +8,9 @@ from .utils import remove_file
 
 
 @pytest.inlineCallbacks
-def test_send_file(out_contents, out_path, in_path, peers,
+def test_send_file(out_contents, out_hash, out_path, in_path, peers,
                    callback_side_effect):
     peer_a, peer_b, conv_a, conv_b = yield peers
-
-    out_hash = hash_(out_contents)
 
     d_req_in = Deferred()
     conv_b.ui.notify_in_file_request = callback_side_effect(d_req_in)
@@ -35,6 +33,11 @@ def test_send_file(out_contents, out_path, in_path, peers,
 @pytest.fixture
 def out_contents():
     return 'contents'
+
+
+@pytest.fixture
+def out_hash(out_contents):
+    return hash_(out_contents)
 
 
 @pytest.fixture
