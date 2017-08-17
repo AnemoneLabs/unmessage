@@ -1695,7 +1695,7 @@ class ElementParser(object):
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
     def parse(self, element, conversation, connection=None):
-        self.log.debug('Parsing element of type: {element.__class__}',
+        self.log.debug('Parsing element of type: {element.__class__.__name__}',
                        element=element)
         try:
             method = ElementParser.parse_methods[type(element)]
