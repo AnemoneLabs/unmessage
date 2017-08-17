@@ -1287,7 +1287,7 @@ class Conversation(object):
 
                     self.log.error(error.title)
                     self.log.error(failure.getTraceback())
-                    self.peer._ui.notify_error(error)
+                    self.ui.notify_error(error)
 
                 d = maybeDeferred(method, data, connection)
                 d.addErrback(errback)
