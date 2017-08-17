@@ -1276,15 +1276,16 @@ class Conversation(object):
                 self.log.warn('Failed to find the receive method for state: '
                               '{state}', state=self.state)
                 # TODO maybe disconnect instead of ignoring the data
-            except (errors.MalformedPacketError,
-                    errors.CorruptedPacketError) as e:
-                e.title += ' caused by "{}"'.format(self.contact.name)
-                self.peer._ui.notify_error(e)
             else:
                 self.log.debug(
                     'Receiving data with {method.__name__} for state: {state}',
                     method=method, state=self.state)
-                method(data, connection)
+                try:
+                    method(data, connection)
+                except (errors.MalformedPacketError,
+                        errors.CorruptedPacketError) as e:
+                    e.title += ' caused by "{}"'.format(self.contact.name)
+                    self.peer._ui.notify_error(e)
 
     def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
