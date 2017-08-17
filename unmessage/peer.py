@@ -1163,7 +1163,10 @@ class Conversation(object):
     _managers = attr.ib(init=False, default=attr.Factory(dict))
 
     receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
-    _receive_data_methods = attr.ib(init=False, default=attr.Factory(dict))
+    _receive_data_methods = attr.ib(init=False, default=attr.Factory(
+        lambda self: {Conversation.state_out_req: self.receive_reply_data,
+                      Conversation.state_conv: self.receive_conversation_data},
+        takes_self=True))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
@@ -1190,15 +1193,6 @@ class Conversation(object):
     def parse_message_element(cls, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
-
-    @property
-    def receive_data_methods(self):
-        if not self._receive_data_methods:
-            self._receive_data_methods = {
-                Conversation.state_out_req: self.receive_reply_data,
-                Conversation.state_conv: self.receive_conversation_data
-            }
-        return self._receive_data_methods
 
     @property
     def is_authenticated(self):
@@ -1247,7 +1241,7 @@ class Conversation(object):
     def receive_data(self, data, connection=None):
         with self.receive_data_lock:
             try:
-                method = self.receive_data_methods[self.state]
+                method = self._receive_data_methods[self.state]
             except KeyError:
                 # the state does not have a "receive" method, which is probably
                 # state_in_req because it should be waiting for the request to
