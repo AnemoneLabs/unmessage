@@ -1700,8 +1700,7 @@ class ElementParser(object):
         try:
             method = ElementParser.parse_methods[type(element)]
         except KeyError:
-            # TODO handle elements with unknown types
-            pass
+            raise errors.UnknownElementError(element)
         else:
             def errback(failure):
                 self.log.error('Error while parsing element from '
