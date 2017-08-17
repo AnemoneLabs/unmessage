@@ -284,21 +284,6 @@ class Peer(object):
         self.log.info(status)
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
 
-    def _notify_error(self, conv, error):
-        failure = error if isinstance(error, Failure) else Failure(error)
-
-        self.log.error(failure.getTraceback())
-
-        if failure.check(errors.ConnectionLostError):
-            conv.ui.notify_disconnect(failure.value)
-        elif failure.check(errors.OfflinePeerError):
-            conv.ui.notify_offline(failure.value)
-        elif failure.check(errors.UnmessageError):
-            conv.ui.notify_error(failure.value)
-        else:
-            conv.ui.notify_error(
-                errors.UnmessageError(failure.getErrorMessage()))
-
     def _update_config(self):
         if not CONFIG.has_section('unMessage'):
             CONFIG.add_section('unMessage')
