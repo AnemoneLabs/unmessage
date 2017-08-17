@@ -598,9 +598,9 @@ class Peer(object):
         Unwrap the element packet with decryption, process it and parse the
         element.
         """
-        regular_packet = self._decrypt(packet, conversation)
+        element_packet = self._decrypt(packet, conversation)
         partial = self._process_element_packet(
-            packet=regular_packet,
+            packet=element_packet,
             conversation=conversation,
             sender=conversation.contact.name,
             receiver=self.name)
