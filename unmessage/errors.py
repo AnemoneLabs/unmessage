@@ -136,6 +136,13 @@ class UnknownContactError(UnmessageError):
             message='There is no contact called "{}"'.format(contact))
 
 
+class UnknownElementError(UnmessageError):
+    def __init__(self, element):
+        super(UnknownElementError, self).__init__(
+            title='Unknown element error',
+            message='The element type "{}" is unknown'.format(element.type_))
+
+
 class VerificationError(UnmessageError):
     def __init__(self, contact):
         super(VerificationError, self).__init__(
