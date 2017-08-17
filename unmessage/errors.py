@@ -155,4 +155,4 @@ def to_unmessage_error(error):
     if isinstance(e, UnmessageError):
         return e
     else:
-        return UnmessageError(message=str(e), title=str(type(e)))
+        return UnmessageError(message=str(e), title=type(e).__name__)
