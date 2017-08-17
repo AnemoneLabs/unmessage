@@ -1705,7 +1705,7 @@ class ElementParser(object):
         else:
             def errback(failure):
                 self.log.error('Error while parsing element from '
-                               '{contact.name} in "{method}"',
+                               '{contact.name} in "{method.__name__}"',
                                contact=conversation.contact, method=method)
                 self.peer._notify_error(conversation, failure)
             d = maybeDeferred(method, element, conversation, connection)
