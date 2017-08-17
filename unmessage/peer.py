@@ -1277,12 +1277,7 @@ class Conversation(object):
                     method=method, state=self.state)
 
                 def errback(failure):
-                    if failure.check(errors.UnmessageError):
-                        error = failure.value
-                    else:
-                        error = errors.UnmessageError(
-                            title=failure.type.__name__,
-                            message=failure.getErrorMessage())
+                    error = errors.to_unmessage_error(failure)
                     error.title += ' - caused by {}'.format(self.contact.name)
 
                     self.log.error(error.title)
