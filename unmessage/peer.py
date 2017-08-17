@@ -1183,6 +1183,7 @@ class Conversation(object):
     _managers = attr.ib(init=False, default=attr.Factory(dict))
 
     receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
+    _receive_data_methods = attr.ib(init=False, default=attr.Factory(dict))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
@@ -1209,6 +1210,15 @@ class Conversation(object):
     def parse_message_element(cls, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
+
+    @property
+    def receive_data_methods(self):
+        if not self._receive_data_methods:
+            self._receive_data_methods = {
+                Conversation.state_out_req: self.receive_reply_data,
+                Conversation.state_conv: self.receive_conversation_data
+            }
+        return self._receive_data_methods
 
     @property
     def is_authenticated(self):
@@ -1257,30 +1267,30 @@ class Conversation(object):
     def receive_data(self, data, connection=None):
         with self.receive_data_lock:
             try:
-                method = getattr(self, 'handle_{}_data'.format(self.state))
-            except AttributeError:
-                # the state does not have a "handle" method, which currently is
+                method = self.receive_data_methods[self.state]
+            except KeyError:
+                # the state does not have a "receive" method, which is probably
                 # state_in_req because it should be waiting for the request to
-                # be accepted (by the user) and meanwhile no more data should
-                # be received from the other party
-                # TODO maybe disconnect instead of ignoring the data
-                self.log.warn('Failed to find the handle method for state: '
+                # be accepted (by this user) and meanwhile no more data should
+                # be received from the other party who already sent the request
+                self.log.warn('Failed to find the receive method for state: '
                               '{state}', state=self.state)
+                # TODO maybe disconnect instead of ignoring the data
             except (errors.MalformedPacketError,
                     errors.CorruptedPacketError) as e:
                 e.title += ' caused by "{}"'.format(self.contact.name)
                 self.peer._ui.notify_error(e)
             else:
                 self.log.debug(
-                    'Handling data with {method.__name__} for state: {state}',
+                    'Receiving data with {method.__name__} for state: {state}',
                     method=method, state=self.state)
                 method(data, connection)
 
-    def handle_conv_data(self, data, connection):
+    def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
         self.peer._receive_packet(packet, connection, self)
 
-    def handle_out_req_data(self, data, connection):
+    def receive_reply_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
