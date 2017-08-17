@@ -13,7 +13,7 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet.base import ReactorBase
-from twisted.internet.defer import Deferred, DeferredList
+from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
@@ -1683,48 +1683,33 @@ class FileTransfer(object):
 
 @attr.s
 class ElementParser(object):
+    parse_methods = {FileRequestElement: FileSession.parse_request_element,
+                     FileElement: FileSession.parse_file_element,
+                     UntalkElement: untalk.UntalkSession.parse_untalk_element,
+                     PresenceElement: Conversation.parse_presence_element,
+                     MessageElement: Conversation.parse_message_element,
+                     AuthenticationElement: AuthSession.parse_auth_element}
+
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
-
-    def _parse_filereq_element(self, element, conversation, connection=None):
-        FileSession.parse_request_element(element, conversation, connection)
-
-    def _parse_file_element(self, element, conversation, connection=None):
-        FileSession.parse_file_element(element, conversation)
-
-    def _parse_untalk_element(self, element, conversation, connection=None):
-        untalk.UntalkSession.parse_untalk_element(element,
-                                                  conversation,
-                                                  connection)
-
-    def _parse_pres_element(self, element, conversation, connection=None):
-        Conversation.parse_presence_element(element, conversation)
-
-    def _parse_msg_element(self, element, conversation, connection=None):
-        Conversation.parse_message_element(element, conversation)
-
-    def _parse_auth_element(self, element, conversation, connection=None):
-        AuthSession.parse_auth_element(element, conversation)
 
     def parse(self, element, conversation, connection=None):
         self.log.debug('Parsing element of type: {element.__class__}',
                        element=element)
         try:
-            method = getattr(self, '_parse_{}_element'.format(element.type_))
-        except AttributeError:
+            method = ElementParser.parse_methods[type(element)]
+        except KeyError:
             # TODO handle elements with unknown types
             pass
         else:
-            try:
-                method(element, conversation, connection)
-            except Exception as e:
-                message = ('Error while parsing element from {} in '
-                           '"{}"'.format(conversation.contact.name, method))
-                if e.message:
-                    message += ' - ' + e.message
-                e.message = message
-                self.peer._notify_error(conversation, Failure(e))
+            def errback(failure):
+                self.log.error('Error while parsing element from '
+                               '{contact.name} in "{method}"',
+                               contact=conversation.contact, method=method)
+                self.peer._notify_error(conversation, failure)
+            d = maybeDeferred(method, element, conversation, connection)
+            d.addErrback(errback)
 
 
 @attr.s
