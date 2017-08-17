@@ -598,26 +598,21 @@ class Peer(object):
         Unwrap the element packet with decryption, process it and parse the
         element.
         """
-        try:
-            regular_packet = self._decrypt(packet, conversation)
-        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
-            e.title += ' caused by "{}"'.format(conversation.contact.name)
-            self.peer.notify_error(e)
+        regular_packet = self._decrypt(packet, conversation)
+        partial = self._process_element_packet(
+            packet=regular_packet,
+            conversation=conversation,
+            sender=conversation.contact.name,
+            receiver=self.name)
+        if partial.is_complete:
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
+            return self._element_parser.parse(partial.to_element(),
+                                              conversation,
+                                              connection)
         else:
-            partial = self._process_element_packet(
-                packet=regular_packet,
-                conversation=conversation,
-                sender=conversation.contact.name,
-                receiver=self.name)
-            if partial.is_complete:
-                # it can be parsed as all parts have been added to the
-                # ``PartialElement`` or it is composed of a single part
-                self._element_parser.parse(partial.to_element(),
-                                           conversation,
-                                           connection)
-            else:
-                # the ``PartialElement`` has parts yet to be received
-                pass
+            # the ``PartialElement`` has parts yet to be received
+            pass
 
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
@@ -1280,16 +1275,26 @@ class Conversation(object):
                 self.log.debug(
                     'Receiving data with {method.__name__} for state: {state}',
                     method=method, state=self.state)
-                try:
-                    method(data, connection)
-                except (errors.MalformedPacketError,
-                        errors.CorruptedPacketError) as e:
-                    e.title += ' caused by "{}"'.format(self.contact.name)
-                    self.peer._ui.notify_error(e)
+
+                def errback(failure):
+                    if failure.check(errors.UnmessageError):
+                        error = failure.value
+                    else:
+                        error = errors.UnmessageError(
+                            title=failure.type.__name__,
+                            message=failure.getErrorMessage())
+                    error.title += ' - caused by {}'.format(self.contact.name)
+
+                    self.log.error(error.title)
+                    self.log.error(failure.getTraceback())
+                    self.peer._ui.notify_error(error)
+
+                d = maybeDeferred(method, data, connection)
+                d.addErrback(errback)
 
     def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        self.peer._receive_packet(packet, connection, self)
+        return self.peer._receive_packet(packet, connection, self)
 
     def receive_reply_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
@@ -1713,13 +1718,7 @@ class ElementParser(object):
         except KeyError:
             raise errors.UnknownElementError(element)
         else:
-            def errback(failure):
-                self.log.error('Error while parsing element from '
-                               '{contact.name} in "{method.__name__}"',
-                               contact=conversation.contact, method=method)
-                self.peer._notify_error(conversation, failure)
-            d = maybeDeferred(method, element, conversation, connection)
-            d.addErrback(errback)
+            return method(element, conversation, connection)
 
 
 @attr.s
