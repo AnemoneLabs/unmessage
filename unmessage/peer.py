@@ -1259,7 +1259,8 @@ class Conversation(object):
                     error = errors.to_unmessage_error(failure)
                     error.title += ' - caused by {}'.format(self.contact.name)
 
-                    self.log.error(error.title)
+                    self.log.error('{error.title}: {error.message}',
+                                   error=error)
                     self.log.error(failure.getTraceback())
                     self.ui.notify_error(error)
 
