@@ -4,7 +4,7 @@ import pytest
 from twisted.internet.defer import Deferred
 
 from unmessage import elements
-from unmessage.peer import b2a
+from unmessage.peer import b2a, FileTransfer
 from pyaxo import hash_
 
 from .utils import remove_file
@@ -45,27 +45,26 @@ def test_prepare_file_request(out_contents, out_hash, out_path, file_name,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_accept(out_contents, out_hash, out_path, in_path,
-                             accept_element, peers):
+def test_prepare_file_accept(out_contents, out_hash, b64_out_hash, out_path,
+                             file_size, file_name, request_element, transfer,
+                             in_path, accept_element, peers):
     peer_a, peer_b, _, conv_b = yield peers
 
-    yield peer_a.send_file(peer_b.name, out_path)
-
-    manager = conv_b.file_session
-    element, _ = manager.prepare_accept(b2a(out_hash))
+    manager = conv_b.init_file()
+    manager.in_requests[b64_out_hash] = transfer
+    element, _ = manager.prepare_accept(b64_out_hash)
 
     assert element == accept_element
 
 
 @pytest.inlineCallbacks
-def test_prepare_file(out_contents, out_hash, out_path, file_element, in_path,
-                      peers):
+def test_prepare_file(out_contents, out_hash, b64_out_hash, out_path, transfer,
+                      file_element, in_path, peers):
     peer_a, peer_b, conv_a, _ = yield peers
 
-    yield peer_a.send_file(peer_b.name, out_path)
-
-    manager = conv_a.file_session
-    element, _ = manager.prepare_file(b2a(out_hash))
+    manager = conv_a.init_file()
+    manager.out_requests[b64_out_hash] = transfer
+    element, _ = manager.prepare_file(b64_out_hash)
 
     assert element == file_element
 
@@ -76,6 +75,11 @@ def out_contents():
 
 
 @pytest.fixture
+def b64_out_contents(out_contents):
+    return b2a(out_contents.decode('ascii'))
+
+
+@pytest.fixture
 def file_size(out_contents):
     return len(out_contents)
 
@@ -83,6 +87,11 @@ def file_size(out_contents):
 @pytest.fixture
 def out_hash(out_contents):
     return hash_(out_contents)
+
+
+@pytest.fixture
+def b64_out_hash(out_hash):
+    return b2a(out_hash)
 
 
 @pytest.fixture
@@ -110,8 +119,13 @@ def accept_element(out_hash):
 
 
 @pytest.fixture
-def file_element(out_contents):
-    return elements.FileElement(b2a(out_contents.decode('ascii')))
+def file_element(out_contents, b64_out_contents):
+    return elements.FileElement(b64_out_contents)
+
+
+@pytest.fixture
+def transfer(request_element, b64_out_contents):
+    return FileTransfer(request_element, b64_out_contents)
 
 
 @pytest.fixture
