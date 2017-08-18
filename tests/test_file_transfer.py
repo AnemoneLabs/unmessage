@@ -34,9 +34,8 @@ def test_send_file(out_contents, out_hash, out_path, in_path, peers,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_request(out_contents, out_hash, out_path, file_name,
-                              file_size, request_element, in_path, peers):
-    peer_a, _, conv_a, _ = yield peers
+def test_prepare_file_request(out_path, request_element, peers):
+    _, _, conv_a, _ = yield peers
 
     manager = conv_a.init_file()
     element, _ = manager.prepare_request(out_path)
@@ -45,10 +44,8 @@ def test_prepare_file_request(out_contents, out_hash, out_path, file_name,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_accept(out_contents, out_hash, b64_out_hash, out_path,
-                             file_size, file_name, request_element, transfer,
-                             in_path, accept_element, peers):
-    peer_a, peer_b, _, conv_b = yield peers
+def test_prepare_file_accept(b64_out_hash, transfer, accept_element, peers):
+    _, _, _, conv_b = yield peers
 
     manager = conv_b.init_file()
     manager.in_requests[b64_out_hash] = transfer
@@ -58,9 +55,8 @@ def test_prepare_file_accept(out_contents, out_hash, b64_out_hash, out_path,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file(out_contents, out_hash, b64_out_hash, out_path, transfer,
-                      file_element, in_path, peers):
-    peer_a, peer_b, conv_a, _ = yield peers
+def test_prepare_file(b64_out_hash, transfer, file_element, peers):
+    _, _, conv_a, _ = yield peers
 
     manager = conv_a.init_file()
     manager.out_requests[b64_out_hash] = transfer
