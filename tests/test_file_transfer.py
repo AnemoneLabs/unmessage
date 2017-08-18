@@ -11,8 +11,8 @@ from .utils import remove_file
 
 
 @pytest.inlineCallbacks
-def test_send_file(out_contents, out_hash, out_path, in_path, peers,
-                   callback_side_effect):
+def test_send_file(out_contents, out_hash, b64_out_hash, out_path, in_path,
+                   peers, callback_side_effect):
     peer_a, peer_b, conv_a, conv_b = yield peers
 
     d_req_in = Deferred()
@@ -24,7 +24,7 @@ def test_send_file(out_contents, out_hash, out_path, in_path, peers,
 
     yield peer_a.send_file(peer_b.name, out_path)
     yield d_req_in
-    yield peer_b.accept_file(peer_a.name, b2a(out_hash), in_path)
+    yield peer_b.accept_file(peer_a.name, b64_out_hash, in_path)
     yield d_file_out
     yield d_file_in
 
