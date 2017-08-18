@@ -1257,7 +1257,8 @@ class Conversation(object):
 
                 def errback(failure):
                     error = errors.to_unmessage_error(failure)
-                    error.title += ' - caused by {}'.format(self.contact.name)
+                    error.message += ' - caused by {}'.format(
+                        self.contact.name)
 
                     self.log.error('{error.title}: {error.message}',
                                    error=error)
