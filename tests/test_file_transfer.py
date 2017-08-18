@@ -34,23 +34,19 @@ def test_send_file(out_contents, out_hash, out_path, in_path, peers,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_request(out_contents, out_hash, out_path, in_path,
-                              peers):
+def test_prepare_file_request(out_contents, out_hash, out_path, file_name,
+                              file_size, request_element, in_path, peers):
     peer_a, _, conv_a, _ = yield peers
-
-    _, file_name = os.path.split(out_path)
 
     manager = conv_a.init_file()
     element, _ = manager.prepare_request(out_path)
 
-    assert isinstance(element, elements.FileRequestElement)
-    assert element.content == file_name
-    assert element.size == len(out_contents)
-    assert element.checksum == b2a(out_hash)
+    assert element == request_element
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_accept(out_contents, out_hash, out_path, in_path, peers):
+def test_prepare_file_accept(out_contents, out_hash, out_path, in_path,
+                             accept_element, peers):
     peer_a, peer_b, _, conv_b = yield peers
 
     yield peer_a.send_file(peer_b.name, out_path)
@@ -58,14 +54,12 @@ def test_prepare_file_accept(out_contents, out_hash, out_path, in_path, peers):
     manager = conv_b.file_session
     element, _ = manager.prepare_accept(b2a(out_hash))
 
-    assert isinstance(element, elements.FileRequestElement)
-    assert element.content == elements.FileRequestElement.request_accepted
-    assert element.size is None
-    assert element.checksum == b2a(out_hash)
+    assert element == accept_element
 
 
 @pytest.inlineCallbacks
-def test_prepare_file(out_contents, out_hash, out_path, in_path, peers):
+def test_prepare_file(out_contents, out_hash, out_path, file_element, in_path,
+                      peers):
     peer_a, peer_b, conv_a, _ = yield peers
 
     yield peer_a.send_file(peer_b.name, out_path)
@@ -73,13 +67,17 @@ def test_prepare_file(out_contents, out_hash, out_path, in_path, peers):
     manager = conv_a.file_session
     element, _ = manager.prepare_file(b2a(out_hash))
 
-    assert isinstance(element, elements.FileElement)
-    assert element.content == b2a(out_contents.decode('ascii'))
+    assert element == file_element
 
 
 @pytest.fixture
 def out_contents():
     return 'contents'
+
+
+@pytest.fixture
+def file_size(out_contents):
+    return len(out_contents)
 
 
 @pytest.fixture
@@ -90,6 +88,30 @@ def out_hash(out_contents):
 @pytest.fixture
 def out_path():
     return '/tmp/unmessage-out-file.txt'
+
+
+@pytest.fixture
+def file_name(out_path):
+    return os.path.split(out_path)[1]
+
+
+@pytest.fixture
+def request_element(file_name, file_size, out_hash):
+    return elements.FileRequestElement(file_name,
+                                       size=file_size,
+                                       checksum=b2a(out_hash))
+
+
+@pytest.fixture
+def accept_element(out_hash):
+    return elements.FileRequestElement(
+        elements.FileRequestElement.request_accepted,
+        checksum=b2a(out_hash))
+
+
+@pytest.fixture
+def file_element(out_contents):
+    return elements.FileElement(b2a(out_contents.decode('ascii')))
 
 
 @pytest.fixture
