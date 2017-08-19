@@ -3,7 +3,6 @@ from functools import wraps
 import attr
 from pyaxo import a2b
 
-from . import elements
 from . import errors
 from .utils import raise_if_not
 
@@ -156,10 +155,8 @@ class HandshakePacket(object):
 class ElementPacket(object):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
     payload = attr.ib(validator=attr.validators.instance_of(str))
-    id_ = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(str)),
-        default=attr.Factory(elements.get_random_id))
-    part_num = attr.ib(default=1, convert=int)
+    id_ = attr.ib(validator=attr.validators.instance_of(str))
+    part_num = attr.ib(default=0, convert=int)
     part_len = attr.ib(default=1, convert=int)
 
     @classmethod

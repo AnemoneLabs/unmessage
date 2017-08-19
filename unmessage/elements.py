@@ -1,31 +1,76 @@
 import json
+from functools import wraps
 
 import attr
 from nacl.utils import random
 from pyaxo import b2a
 
+from . import errors
+from .packets import ElementPacket
 
+
+def raise_incomplete(f):
+    @wraps(f)
+    def wrapped_f(self, *args, **kwargs):
+        if self.is_complete:
+            return f(self, *args, **kwargs)
+        else:
+            raise errors.IncompleteElementError()
+    return wrapped_f
+
+
+@attr.s
 class PartialElement(dict):
+    type_ = attr.ib(validator=attr.validators.instance_of(str))
+    id_ = attr.ib(validator=attr.validators.instance_of(str))
+    part_len = attr.ib(validator=attr.validators.instance_of(int))
+    sender = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+    receiver = attr.ib(
+        validator=attr.validators.optional(attr.validators.instance_of(str)),
+        default=None)
+
     @classmethod
-    def from_packet(cls, packet, sender, receiver):
-        partial = cls(sender, receiver,
-                      packet.type_, packet.id_, packet.part_len)
+    def from_element(cls, element, id_=None, max_len=None):
+        id_ = id_ or get_random_id()
+        parts = list()
+        if max_len is None:
+            parts.append(element.serialize())
+        else:
+            # TODO split the element (#59)
+            raise Exception('Not implemented')
+        partial = cls(element.type_, id_, len(parts),
+                      element.sender, element.receiver)
+        for part_num, part in enumerate(parts):
+            partial[part_num] = parts[part_num]
+        return partial
+
+    @classmethod
+    def from_packet(cls, packet, sender=None, receiver=None):
+        partial = cls(packet.type_, packet.id_, packet.part_len,
+                      sender, receiver)
         partial[packet.part_num] = packet.payload
         return partial
 
-    def __init__(self, sender, receiver, type_, id_, part_len):
-        self.sender = sender
-        self.receiver = receiver
-        self.type_ = type_
-        self.id_ = id_
-        self.part_len = part_len
-
+    @raise_incomplete
     def __str__(self):
         return ''.join(self.values())
 
     @property
     def is_complete(self):
         return len(self) == self.part_len
+
+    @raise_incomplete
+    def to_packets(self):
+        packets = list()
+        for part_num, part in self.items():
+            packets.append(ElementPacket(self.type_,
+                                         part,
+                                         self.id_,
+                                         part_num,
+                                         self.part_len))
+        return packets
 
     def to_element(self):
         element = Element.build(self.type_, str(self))
@@ -38,6 +83,8 @@ class PartialElement(dict):
 class Element(object):
     element_classes = None
     filtered_attr_names = ['content']
+
+    type_ = 'elmt'
 
     content = attr.ib(default=None)
     sender = attr.ib(default=None)
@@ -53,7 +100,8 @@ class Element(object):
     @classmethod
     def get_element_classes(cls):
         if not cls.element_classes:
-            cls.element_classes = {c.type_: c for c in cls.__subclasses__()}
+            cls.element_classes = {c.type_: c
+                                   for c in cls.__subclasses__() + [cls]}
         return cls.element_classes
 
     @classmethod

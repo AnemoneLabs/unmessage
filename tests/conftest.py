@@ -55,6 +55,11 @@ def peers(peer_a, peer_b, mocker):
                                         peer_b._conversations[peer_a.name])))
 
 
+@pytest.fixture
+def content():
+    return 'foo'
+
+
 @pytest.fixture(scope='session')
 def log():
     begin_logging('/tmp/unmessage.log', LogLevel.debug)
