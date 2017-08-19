@@ -13,7 +13,7 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet.base import ReactorBase
-from twisted.internet.defer import Deferred, DeferredList
+from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
@@ -283,21 +283,6 @@ class Peer(object):
     def _notify_bootstrap(self, status):
         self.log.info(status)
         self._ui.notify_bootstrap(notifications.UnmessageNotification(status))
-
-    def _notify_error(self, conv, error):
-        failure = error if isinstance(error, Failure) else Failure(error)
-
-        self.log.error(failure.getTraceback())
-
-        if failure.check(errors.ConnectionLostError):
-            conv.ui.notify_disconnect(failure.value)
-        elif failure.check(errors.OfflinePeerError):
-            conv.ui.notify_offline(failure.value)
-        elif failure.check(errors.UnmessageError):
-            conv.ui.notify_error(failure.value)
-        else:
-            conv.ui.notify_error(
-                errors.UnmessageError(failure.getErrorMessage()))
 
     def _update_config(self):
         if not CONFIG.has_section('unMessage'):
@@ -597,18 +582,21 @@ class Peer(object):
         Unwrap the element packet with decryption, process it and parse the
         element.
         """
-        try:
-            regular_packet = self._decrypt(packet, conversation)
-        except (errors.MalformedPacketError, errors.CorruptedPacketError) as e:
-            e.title += ' caused by "{}"'.format(conversation.contact.name)
-            self.peer.notify_error(e)
+        element_packet = self._decrypt(packet, conversation)
+        partial = self._process_element_packet(
+            packet=element_packet,
+            conversation=conversation,
+            sender=conversation.contact.name,
+            receiver=self.name)
+        if partial.is_complete:
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
+            return self._element_parser.parse(partial.to_element(),
+                                              conversation,
+                                              connection)
         else:
-            element = self._process_element_packet(
-                packet=regular_packet,
-                conversation=conversation,
-                sender=conversation.contact.name,
-                receiver=self.name)
-            self._element_parser.parse(element, conversation, connection)
+            # the ``PartialElement`` has parts yet to be received
+            pass
 
     def _process_element_packet(self, packet, conversation, sender, receiver):
         with conversation.elements_lock:
@@ -1181,6 +1169,10 @@ class Conversation(object):
     _managers = attr.ib(init=False, default=attr.Factory(dict))
 
     receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
+    _receive_data_methods = attr.ib(init=False, default=attr.Factory(
+        lambda self: {Conversation.state_out_req: self.receive_reply_data,
+                      Conversation.state_conv: self.receive_conversation_data},
+        takes_self=True))
 
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
@@ -1194,7 +1186,7 @@ class Conversation(object):
                                         self.contact.name)
 
     @classmethod
-    def parse_presence_element(cls, element, conversation):
+    def parse_presence_element(cls, element, conversation, connection=None):
         notification = notifications.UnmessageNotification(
             '{} is {}'.format(conversation.contact.name, str(element)))
         if str(element) == PresenceElement.status_online:
@@ -1204,7 +1196,7 @@ class Conversation(object):
             conversation.ui.notify_offline(notification)
 
     @classmethod
-    def parse_message_element(cls, element, conversation):
+    def parse_message_element(cls, element, conversation, connection=None):
         conversation.ui.notify_message(
             notifications.ElementNotification(element))
 
@@ -1255,30 +1247,38 @@ class Conversation(object):
     def receive_data(self, data, connection=None):
         with self.receive_data_lock:
             try:
-                method = getattr(self, 'handle_{}_data'.format(self.state))
-            except AttributeError:
-                # the state does not have a "handle" method, which currently is
+                method = self._receive_data_methods[self.state]
+            except KeyError:
+                # the state does not have a "receive" method, which is probably
                 # state_in_req because it should be waiting for the request to
-                # be accepted (by the user) and meanwhile no more data should
-                # be received from the other party
-                # TODO maybe disconnect instead of ignoring the data
-                self.log.warn('Failed to find the handle method for state: '
+                # be accepted (by this user) and meanwhile no more data should
+                # be received from the other party who already sent the request
+                self.log.warn('Failed to find the receive method for state: '
                               '{state}', state=self.state)
-            except (errors.MalformedPacketError,
-                    errors.CorruptedPacketError) as e:
-                e.title += ' caused by "{}"'.format(self.contact.name)
-                self.peer._ui.notify_error(e)
+                # TODO maybe disconnect instead of ignoring the data
             else:
                 self.log.debug(
-                    'Handling data with {method.__name__} for state: {state}',
+                    'Receiving data with {method.__name__} for state: {state}',
                     method=method, state=self.state)
-                method(data, connection)
 
-    def handle_conv_data(self, data, connection):
+                def errback(failure):
+                    error = errors.to_unmessage_error(failure)
+                    error.message += ' - caused by {}'.format(
+                        self.contact.name)
+
+                    self.log.error('{error.title}: {error.message}',
+                                   error=error)
+                    self.log.error(failure.getTraceback())
+                    self.ui.notify_error(error)
+
+                d = maybeDeferred(method, data, connection)
+                d.addErrback(errback)
+
+    def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        self.peer._receive_packet(packet, connection, self)
+        return self.peer._receive_packet(packet, connection, self)
 
-    def handle_out_req_data(self, data, connection):
+    def receive_reply_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
         req = self.peer._outbound_requests[self.contact.identity]
         enc_handshake_key = a2b(packet.handshake_key)
@@ -1403,7 +1403,7 @@ class AuthSession(object):
 
     @classmethod
     @inlineCallbacks
-    def parse_auth_element(cls, element, conversation):
+    def parse_auth_element(cls, element, conversation, connection=None):
         buffer_ = str(element)
         try:
             next_buffer = conversation.auth_session.advance(buffer_)
@@ -1519,7 +1519,7 @@ class FileSession(object):
             raise errors.InvalidElementError()
 
     @classmethod
-    def parse_file_element(cls, element, conversation):
+    def parse_file_element(cls, element, conversation, connection=None):
         raise_if_not(FileElement.is_valid_file,
                      errors.InvalidElementError)(value=element)
 
@@ -1698,58 +1698,26 @@ class FileTransfer(object):
 
 @attr.s
 class ElementParser(object):
+    parse_methods = {FileRequestElement: FileSession.parse_request_element,
+                     FileElement: FileSession.parse_file_element,
+                     UntalkElement: untalk.UntalkSession.parse_untalk_element,
+                     PresenceElement: Conversation.parse_presence_element,
+                     MessageElement: Conversation.parse_message_element,
+                     AuthenticationElement: AuthSession.parse_auth_element}
+
     peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
-    def _parse_filereq_element(self, element, conversation, connection=None):
-        FileSession.parse_request_element(element, conversation, connection)
-
-    def _parse_file_element(self, element, conversation, connection=None):
-        FileSession.parse_file_element(element, conversation)
-
-    def _parse_untalk_element(self, element, conversation, connection=None):
-        untalk.UntalkSession.parse_untalk_element(element,
-                                                  conversation,
-                                                  connection)
-
-    def _parse_pres_element(self, element, conversation, connection=None):
-        Conversation.parse_presence_element(element, conversation)
-
-    def _parse_msg_element(self, element, conversation, connection=None):
-        Conversation.parse_message_element(element, conversation)
-
-    def _parse_auth_element(self, element, conversation, connection=None):
-        AuthSession.parse_auth_element(element, conversation)
-
     def parse(self, element, conversation, connection=None):
-        if element.is_complete:
-            self.log.debug('Parsing element of type: {element.__class__}',
-                           element=element.to_element())
-
-            # it can be parsed as all parts have been added to the
-            # ``PartialElement`` or it is composed of a single part
-            try:
-                method = getattr(self,
-                                 '_parse_{}_element'.format(element.type_))
-            except AttributeError:
-                # TODO handle elements with unknown types
-                pass
-            else:
-                try:
-                    method(element.to_element(), conversation, connection)
-                except Exception as e:
-                    message = ('Error while parsing element from {} in '
-                               '"{}"'.format(conversation.contact.name,
-                                             method))
-                    if e.message:
-                        message += ' - ' + e.message
-                    e.message = message
-                    self.peer._notify_error(conversation, Failure(e))
+        self.log.debug('Parsing element of type: {element.__class__.__name__}',
+                       element=element)
+        try:
+            method = ElementParser.parse_methods[type(element)]
+        except KeyError:
+            raise errors.UnknownElementError(element)
         else:
-            # the ``PartialElement`` has parts yet to be
-            # transmitted (sent/received)
-            pass
+            return method(element, conversation, connection)
 
 
 @attr.s
