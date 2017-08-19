@@ -44,15 +44,14 @@ def test_establish_conversation(peer_a, peer_b, mocker):
 
 
 @pytest.inlineCallbacks
-def test_prepare_accept_request(peer_a, peer_b, mocker):
+def test_prepare_accept_request(request_element, peer_a, peer_b, mocker):
     attach(peer_a, peer_b, mocker)
 
     yield peer_b.send_request(peer_a.identity, b2a(peer_a.identity_keys.pub))
     request = peer_a._inbound_requests[peer_b.identity]
     element, _ = peer_a._prepare_accept_request(request)
 
-    assert isinstance(element, elements.RequestElement)
-    assert str(element) == elements.RequestElement.request_accepted
+    assert element == request_element
 
 
 @pytest.inlineCallbacks
@@ -124,12 +123,11 @@ def test_send_message(content, peers, callback_side_effect):
 
 
 @pytest.inlineCallbacks
-def test_prepare_message(content, peers):
+def test_prepare_message(message_element, content, peers):
     peer_a, peer_b, _, _ = yield peers
 
     element = peer_a._prepare_message(content)
-    assert isinstance(element, elements.MessageElement)
-    assert str(element) == content
+    assert element == message_element
 
 
 SECRETS = [('secret', 'secret'),
@@ -171,3 +169,13 @@ def test_prepare_authentication(peers):
     conv_a.init_auth()
     element, _ = peer_a._prepare_authentication(conv_a, secret)
     assert isinstance(element, elements.AuthenticationElement)
+
+
+@pytest.fixture
+def request_element():
+    return elements.RequestElement(elements.RequestElement.request_accepted)
+
+
+@pytest.fixture
+def message_element(content):
+    return elements.MessageElement(content)
