@@ -79,11 +79,6 @@ def test_get_random_element_id():
 
 
 @pytest.fixture
-def content():
-    return 'foo'
-
-
-@pytest.fixture
 def serialized_payload(content):
     return '{{"content": "{}"}}'.format(content)
 

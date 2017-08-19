@@ -11,7 +11,7 @@ from .utils import remove_file
 
 
 @pytest.inlineCallbacks
-def test_send_file(out_contents, out_hash, b64_out_hash, out_path, in_path,
+def test_send_file(out_content, out_hash, b64_out_hash, out_path, in_path,
                    peers, callback_side_effect):
     peer_a, peer_b, conv_a, conv_b = yield peers
 
@@ -28,9 +28,9 @@ def test_send_file(out_contents, out_hash, b64_out_hash, out_path, in_path,
     yield d_file_out
     yield d_file_in
 
-    in_contents = open(in_path, 'r').read()
-    assert in_contents == out_contents
-    assert hash_(in_contents) == out_hash
+    in_content = open(in_path, 'r').read()
+    assert in_content == out_content
+    assert hash_(in_content) == out_hash
 
 
 @pytest.inlineCallbacks
@@ -66,23 +66,23 @@ def test_prepare_file(b64_out_hash, transfer, file_element, peers):
 
 
 @pytest.fixture
-def out_contents():
-    return 'contents'
+def out_content(content):
+    return content
 
 
 @pytest.fixture
-def b64_out_contents(out_contents):
-    return b2a(out_contents.decode('ascii'))
+def b64_out_content(out_content):
+    return b2a(out_content.decode('ascii'))
 
 
 @pytest.fixture
-def file_size(out_contents):
-    return len(out_contents)
+def file_size(out_content):
+    return len(out_content)
 
 
 @pytest.fixture
-def out_hash(out_contents):
-    return hash_(out_contents)
+def out_hash(out_content):
+    return hash_(out_content)
 
 
 @pytest.fixture
@@ -115,13 +115,13 @@ def accept_element(out_hash):
 
 
 @pytest.fixture
-def file_element(out_contents, b64_out_contents):
-    return elements.FileElement(b64_out_contents)
+def file_element(out_content, b64_out_content):
+    return elements.FileElement(b64_out_content)
 
 
 @pytest.fixture
-def transfer(request_element, b64_out_contents):
-    return FileTransfer(request_element, b64_out_contents)
+def transfer(request_element, b64_out_content):
+    return FileTransfer(request_element, b64_out_content)
 
 
 @pytest.fixture
@@ -130,8 +130,8 @@ def in_path():
 
 
 @pytest.fixture(autouse=True)
-def setup_teardown(out_contents, out_path, in_path):
-    open(out_path, 'w').write(out_contents)
+def setup_teardown(out_content, out_path, in_path):
+    open(out_path, 'w').write(out_content)
     remove_file(in_path)
     yield
     remove_file(out_path)

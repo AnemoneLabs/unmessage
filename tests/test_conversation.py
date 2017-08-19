@@ -112,26 +112,24 @@ def test_prepare_presence(status, peers):
 
 
 @pytest.inlineCallbacks
-def test_send_message(peers, callback_side_effect):
+def test_send_message(content, peers, callback_side_effect):
     peer_a, peer_b, _, conv_b = yield peers
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
 
-    sent_message = 'message'
-    yield peer_a.send_message(peer_b.name, sent_message)
+    yield peer_a.send_message(peer_b.name, content)
     received_message = yield d
-    assert str(received_message) == sent_message
+    assert str(received_message) == content
 
 
 @pytest.inlineCallbacks
-def test_prepare_message(peers):
+def test_prepare_message(content, peers):
     peer_a, peer_b, _, _ = yield peers
 
-    sent_message = 'message'
-    element = peer_a._prepare_message(sent_message)
+    element = peer_a._prepare_message(content)
     assert isinstance(element, elements.MessageElement)
-    assert str(element) == sent_message
+    assert str(element) == content
 
 
 SECRETS = [('secret', 'secret'),
