@@ -800,45 +800,6 @@ class Peer(object):
 
         return RequestElement(RequestElement.request_accepted), handshake_keys
 
-    @inlineCallbacks
-    def _untalk(self, conversation, input_device=None, output_device=None):
-        if conversation.is_active:
-            if self._can_talk(conversation):
-                untalk_session = (conversation.untalk_session or
-                                  conversation.init_untalk())
-                if untalk_session.is_talking:
-                    conversation.stop_untalk()
-                else:
-                    try:
-                        untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError:
-                        conversation.remove_manager(untalk_session)
-                        raise
-                    else:
-                        yield self._send_element(
-                            conversation,
-                            UntalkElement(
-                                b2a(untalk_session.handshake_keys.pub)))
-                        if (untalk_session.state ==
-                                untalk.UntalkSession.state_sent):
-                            notification = notifications.UntalkNotification(
-                                message='Voice conversation request sent '
-                                        'to {}'.format(
-                                            conversation.contact.name))
-                            returnValue(notification)
-                        else:
-                            # this peer has accepted the request
-                            conversation.start_untalk()
-            else:
-                raise errors.UntalkError(
-                    message='You can only make one voice conversation at a '
-                            'time')
-        else:
-            # TODO automatically connect and send request
-            raise errors.UntalkError(
-                message='You must be connected to {} in order to start a '
-                        'conversation'.format(conversation.contact.name))
-
     def _can_talk(self, conversation):
         for c in self.conversations:
             try:
@@ -848,53 +809,8 @@ class Peer(object):
                 continue
         return True
 
-    @inlineCallbacks
-    def _send_message(self, conversation, plaintext):
-        element = self._prepare_message(plaintext)
-        yield self._send_element(conversation, element)
-        notification = notifications.ElementNotification(element)
-        returnValue(notification)
-
     def _prepare_message(self, message):
         return MessageElement(message)
-
-    @inlineCallbacks
-    def _send_file(self, conversation, file_path):
-        if conversation.is_active:
-            file_session = (conversation.file_session or
-                            conversation.init_file())
-            result = yield file_session.send_request(file_path)
-            returnValue(result)
-        else:
-            # TODO automatically connect and send request
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    @inlineCallbacks
-    def _accept_file(self, conversation, checksum, file_path=None):
-        if conversation.is_active:
-            result = yield conversation.file_session.accept_request(checksum,
-                                                                    file_path)
-            returnValue(result)
-        else:
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    def _save_file(self, conversation, checksum, file_path=None):
-        if conversation.is_active:
-            conversation.file_session.save_received_file(checksum, file_path)
-        else:
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    @inlineCallbacks
-    def _authenticate(self, conversation, secret):
-        element, auth_session = self._prepare_authentication(conversation,
-                                                             secret)
-        yield self._send_element(conversation, element)
-        if conversation.auth_session.is_waiting:
-            notification = notifications.UnmessageNotification(
-                title='Authentication started',
-                message='Waiting for {} to advance'.format(
-                    conversation.contact.name))
-            returnValue(notification)
 
     def _prepare_authentication(self, conversation, secret):
         # TODO maybe use locks or something to prevent advancing or restarting
@@ -1030,29 +946,89 @@ class Peer(object):
     def get_audio_devices(self):
         return untalk.get_audio_devices()
 
+    @inlineCallbacks
     def untalk(self, conversation, input_device=None, output_device=None):
-        return self._untalk(conversation, input_device, output_device)
+        if conversation.is_active:
+            if self._can_talk(conversation):
+                untalk_session = (conversation.untalk_session or
+                                  conversation.init_untalk())
+                if untalk_session.is_talking:
+                    conversation.stop_untalk()
+                else:
+                    try:
+                        untalk_session.configure(input_device, output_device)
+                    except untalk.AudioDeviceNotFoundError:
+                        conversation.remove_manager(untalk_session)
+                        raise
+                    else:
+                        yield self._send_element(
+                            conversation,
+                            UntalkElement(
+                                b2a(untalk_session.handshake_keys.pub)))
+                        if (untalk_session.state ==
+                                untalk.UntalkSession.state_sent):
+                            notification = notifications.UntalkNotification(
+                                message='Voice conversation request sent '
+                                        'to {}'.format(
+                                            conversation.contact.name))
+                            returnValue(notification)
+                        else:
+                            # this peer has accepted the request
+                            conversation.start_untalk()
+            else:
+                raise errors.UntalkError(
+                    message='You can only make one voice conversation at a '
+                            'time')
+        else:
+            # TODO automatically connect and send request
+            raise errors.UntalkError(
+                message='You must be connected to {} in order to start a '
+                        'conversation'.format(conversation.contact.name))
 
     @inlineCallbacks
     def send_message(self, conversation, plaintext):
-        notification = yield self._send_message(conversation, plaintext)
+        element = self._prepare_message(plaintext)
+        yield self._send_element(conversation, element)
+        notification = notifications.ElementNotification(element)
         returnValue(notification)
 
     @inlineCallbacks
     def send_file(self, conversation, file_path):
-        result = yield self._send_file(conversation, file_path)
-        returnValue(result)
+        if conversation.is_active:
+            file_session = (conversation.file_session or
+                            conversation.init_file())
+            result = yield file_session.send_request(file_path)
+            returnValue(result)
+        else:
+            # TODO automatically connect and send request
+            raise errors.InactiveManagerError(conversation.contact.name)
 
     @inlineCallbacks
     def accept_file(self, conversation, checksum, file_path=None):
-        result = yield self._accept_file(conversation, checksum, file_path)
-        returnValue(result)
+        if conversation.is_active:
+            result = yield conversation.file_session.accept_request(checksum,
+                                                                    file_path)
+            returnValue(result)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
 
     def save_file(self, conversation, checksum, file_path=None):
-        self._save_file(conversation, checksum, file_path)
+        if conversation.is_active:
+            conversation.file_session.save_received_file(checksum, file_path)
+        else:
+            raise errors.InactiveManagerError(conversation.contact.name)
 
+    @inlineCallbacks
     def authenticate(self, conversation, secret):
-        return self._authenticate(conversation, secret)
+        element, auth_session = self._prepare_authentication(conversation,
+                                                             secret)
+        yield self._send_element(conversation, element)
+        if conversation.auth_session.is_waiting:
+            notification = notifications.UnmessageNotification(
+                title='Authentication started',
+                message='Waiting for {} to advance'.format(
+                    conversation.contact.name))
+            returnValue(notification)
 
 
 class Introduction(object):
