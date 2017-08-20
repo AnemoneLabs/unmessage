@@ -1714,7 +1714,7 @@ class ElementParser(object):
         try:
             method = ElementParser.parse_methods[type(element)]
         except KeyError:
-            raise errors.UnknownElementError(element)
+            raise errors.UnknownElementError(element.type_)
         else:
             return method(element, conversation, connection)
 

@@ -145,10 +145,10 @@ class UnknownContactError(UnmessageError):
 
 
 class UnknownElementError(UnmessageError):
-    def __init__(self, element):
+    def __init__(self, type_):
         super(UnknownElementError, self).__init__(
             title='Unknown element error',
-            message='The element type "{}" is unknown'.format(element.type_))
+            message='The element type "{}" is unknown'.format(type_))
 
 
 class VerificationError(UnmessageError):
