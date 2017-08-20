@@ -129,14 +129,13 @@ def test_prepare_message(message_element, content, peers):
     assert element == message_element
 
 
-SECRETS = [('secret', 'secret'),
-           ('secret', 'wrong secret')]
-SECRETS_IDS = ['same', 'distinct']
+SECRETS = {'same': ('secret', 'secret'),
+           'distinct': ('secret', 'wrong secret')}
 
 
 @slow
 @pytest.inlineCallbacks
-@pytest.mark.parametrize('secrets', SECRETS, ids=SECRETS_IDS)
+@pytest.mark.parametrize('secrets', SECRETS.values(), ids=SECRETS.keys())
 def test_authenticate(secrets, peers, callback_side_effect):
     peer_a, peer_b, conv_a, conv_b = yield peers
 

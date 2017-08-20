@@ -20,11 +20,12 @@ def test_serialize_deserialize_element_payload(element):
     assert Element.deserialize(element.serialize()) == element
 
 
-ELEMENT_CLASSES = Element.__subclasses__()
-ELEMENT_CLASSES_IDS = [cls.__name__ for cls in ELEMENT_CLASSES]
+ELEMENT_CLASSES = {cls.__name__: cls for cls in Element.__subclasses__()}
 
 
-@pytest.mark.parametrize('cls', ELEMENT_CLASSES, ids=ELEMENT_CLASSES_IDS)
+@pytest.mark.parametrize('cls',
+                         ELEMENT_CLASSES.values(),
+                         ids=ELEMENT_CLASSES.keys())
 def test_element_factory(cls,
                          serialized_payload, file_request_serialized_payload):
     if cls is FileRequestElement:
