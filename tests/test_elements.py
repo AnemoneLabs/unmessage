@@ -36,6 +36,11 @@ def test_element_factory(cls,
     assert e.serialize() == payload
 
 
+def test_element_factory_unknown_type(serialized_payload):
+    with pytest.raises(errors.UnknownElementError):
+        Element.build('unknown', serialized_payload)
+
+
 def test_single_partial_from_element(element, id_):
     partial = PartialElement.from_element(element, id_)
     assert partial.to_element() == element

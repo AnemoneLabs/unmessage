@@ -93,9 +93,11 @@ class Element(object):
     @classmethod
     def build(cls, type_, data):
         try:
-            return cls.get_element_classes()[type_].deserialize(data)
+            element_class = cls.get_element_classes()[type_]
         except KeyError:
-            return Exception('Unknown element type: {}'.format(type_))
+            raise errors.UnknownElementError(type_)
+        else:
+            return element_class.deserialize(data)
 
     @classmethod
     def get_element_classes(cls):
