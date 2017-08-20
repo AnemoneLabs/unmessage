@@ -1030,33 +1030,29 @@ class Peer(object):
     def get_audio_devices(self):
         return untalk.get_audio_devices()
 
-    def untalk(self, name, input_device=None, output_device=None):
-        return self._untalk(self.get_conversation(name),
-                            input_device, output_device)
+    def untalk(self, conversation, input_device=None, output_device=None):
+        return self._untalk(conversation, input_device, output_device)
 
     @inlineCallbacks
-    def send_message(self, name, plaintext):
-        notification = yield self._send_message(self.get_conversation(name),
-                                                plaintext)
+    def send_message(self, conversation, plaintext):
+        notification = yield self._send_message(conversation, plaintext)
         returnValue(notification)
 
     @inlineCallbacks
-    def send_file(self, name, file_path):
-        result = yield self._send_file(self.get_conversation(name), file_path)
+    def send_file(self, conversation, file_path):
+        result = yield self._send_file(conversation, file_path)
         returnValue(result)
 
     @inlineCallbacks
-    def accept_file(self, name, checksum, file_path=None):
-        result = yield self._accept_file(self.get_conversation(name),
-                                         checksum,
-                                         file_path)
+    def accept_file(self, conversation, checksum, file_path=None):
+        result = yield self._accept_file(conversation, checksum, file_path)
         returnValue(result)
 
-    def save_file(self, name, checksum, file_path=None):
-        self._save_file(self.get_conversation(name), checksum, file_path)
+    def save_file(self, conversation, checksum, file_path=None):
+        self._save_file(conversation, checksum, file_path)
 
-    def authenticate(self, name, secret):
-        return self._authenticate(self.get_conversation(name), secret)
+    def authenticate(self, conversation, secret):
+        return self._authenticate(conversation, secret)
 
 
 class Introduction(object):

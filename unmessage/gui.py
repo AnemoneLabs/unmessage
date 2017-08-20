@@ -432,8 +432,7 @@ class ChatTab(Tk.Frame, ConversationUi, object):
     def send_message(self, message):
         if len(message):
             self.text_message.delete(1.0, Tk.END)
-            yield self.peer.send_message(self.conversation.contact.name,
-                                         message)
+            yield self.peer.send_message(self.conversation, message)
             self.display_message(message, self.peer.name)
 
     def set_presence(self, enable):
@@ -469,8 +468,7 @@ class ChatTab(Tk.Frame, ConversationUi, object):
                            parent=self,
                            show='*')
         if secret:
-            return self.peer.authenticate(self.conversation.contact.name,
-                                          secret)
+            return self.peer.authenticate(self.conversation, secret)
 
     @threadsafe
     def notify_disconnect(self, notification):

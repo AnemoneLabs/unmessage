@@ -111,12 +111,12 @@ def test_prepare_presence(status, peers):
 
 @pytest.inlineCallbacks
 def test_send_message(content, peers, callback_side_effect):
-    peer_a, peer_b, _, conv_b = yield peers
+    peer_a, peer_b, conv_a, conv_b = yield peers
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
 
-    yield peer_a.send_message(peer_b.name, content)
+    yield peer_a.send_message(conv_a, content)
     received_message = yield d
     assert str(received_message) == content
 
@@ -148,9 +148,9 @@ def test_authenticate(secrets, peers, callback_side_effect):
     conv_b.ui.notify_finished_authentication = callback_side_effect(d_finish_b)
 
     secret_a, secret_b = secrets
-    yield peer_a.authenticate(peer_b.name, secret_a)
+    yield peer_a.authenticate(conv_a, secret_a)
     yield d_receive_b
-    yield peer_b.authenticate(peer_a.name, secret_b)
+    yield peer_b.authenticate(conv_b, secret_b)
     yield d_finish_b
     yield d_finish_a
 
