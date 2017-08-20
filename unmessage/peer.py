@@ -1031,16 +1031,17 @@ class Peer(object):
             returnValue(notification)
 
 
+@attr.s
 class Introduction(object):
-    def __init__(self, peer, connection):
-        self.receive_data_lock = Lock()
+    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
+    connection = attr.ib()
 
-        self.peer = peer
-        self.connection = connection
+    receive_data_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
+    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
+
+    def __attrs_post_init__(self):
         self.connection.add_manager(self)
-
-        self.log = loggerFor(self)
 
     def receive_data(self, data, connection=None):
         with self.receive_data_lock:
