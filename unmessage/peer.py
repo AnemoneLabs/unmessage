@@ -2,8 +2,7 @@ import ConfigParser
 import hmac
 import os
 from hashlib import sha256
-from Queue import Queue
-from threading import Event, Lock, Thread
+from threading import Event, Lock
 
 import attr
 import pyaxo
@@ -13,7 +12,7 @@ from nacl.utils import random
 from nacl.exceptions import CryptoError
 from pyaxo import Axolotl, AxolotlConversation, Keypair, a2b, b2a
 from twisted.internet.base import ReactorBase
-from twisted.internet.defer import Deferred, DeferredList, maybeDeferred
+from twisted.internet.defer import DeferredList, maybeDeferred
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.endpoints import connectProtocol
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
@@ -35,7 +34,7 @@ from .elements import MessageElement, AuthenticationElement
 from .elements import FileRequestElement, FileElement
 from .log import begin_logging, loggerFor
 from .ui import ConversationUi, PeerUi
-from .utils import fork, join, default_factory_attrib, Paths, Address
+from .utils import fork, default_factory_attrib, Paths, Address
 from .utils import is_valid_identity, is_valid_file_name
 from .utils import raise_if_not, raise_invalid_name, raise_invalid_shared_key
 from .persistence import PeerInfo, Persistence

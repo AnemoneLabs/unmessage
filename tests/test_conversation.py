@@ -1,10 +1,9 @@
 import pytest
-from twisted.internet import defer
 from twisted.internet.defer import Deferred
 
 from unmessage import elements
 from unmessage.contact import Contact
-from unmessage.peer import b2a, Conversation, Peer
+from unmessage.peer import b2a
 
 from .utils import attach, slow
 
