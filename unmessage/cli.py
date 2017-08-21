@@ -418,6 +418,7 @@ class Cli(PeerUi):
             handler = self._handlers_conv[name]
             handler.display_message(message, is_receiving=False)
 
+    @displays_error
     @inlineCallbacks
     def send_file(self, name, file_path):
         transfer = yield self.peer.send_file(
@@ -426,6 +427,7 @@ class Cli(PeerUi):
             'File request for "{}" sent to {}'.format(
                 transfer.element.content, name))
 
+    @displays_error
     @inlineCallbacks
     def accept_file(self, name, checksum, file_path=None):
         transfer = yield self.peer.accept_file(
@@ -434,6 +436,7 @@ class Cli(PeerUi):
             'Accepted receiving "{}" from {}'.format(
                 transfer.element.content, name))
 
+    @displays_error
     def save_file(self, name, checksum, file_path=None):
         try:
             self.peer.save_file(self.peer.get_conversation(name),
