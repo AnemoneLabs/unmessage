@@ -1524,6 +1524,10 @@ class FileSession(object):
         if self.connection:
             self.connection.remove_manager()
 
+    def notify_disconnect(self):
+        self.connection = None
+        self.conversation.remove_manager(self)
+
     def save_file_bytes(self, file_path, file_bytes):
         with open(file_path, 'wb') as f:
             f.write(file_bytes)
