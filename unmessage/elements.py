@@ -1,4 +1,3 @@
-import json
 from functools import wraps
 
 import attr
@@ -7,6 +6,7 @@ from pyaxo import b2a
 
 from . import errors
 from .packets import ElementPacket
+from .utils import Serializable
 
 
 def raise_incomplete(f):
@@ -80,9 +80,10 @@ class PartialElement(dict):
 
 
 @attr.s
-class Element(object):
-    element_classes = None
+class Element(Serializable):
     filtered_attr_names = ['content']
+
+    element_classes = None
 
     type_ = 'elmt'
 
@@ -106,22 +107,8 @@ class Element(object):
                                    for c in cls.__subclasses__() + [cls]}
         return cls.element_classes
 
-    @classmethod
-    def filter_attrs(cls, attribute, value):
-        if cls.filtered_attr_names is None:
-            return True
-        else:
-            return attribute.name in cls.filtered_attr_names
-
-    @classmethod
-    def deserialize(cls, data):
-        return cls(**json.loads(data))
-
     def __str__(self):
         return self.content
-
-    def serialize(self):
-        return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
 
 @attr.s
