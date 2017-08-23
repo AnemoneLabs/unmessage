@@ -4,7 +4,6 @@ https://github.com/shanet/Cryptully/blob/master/src/crypto/smp.py
 originally written by Shane Tully and released under the LGPL.
 """
 import hashlib
-import os
 import random
 import struct
 

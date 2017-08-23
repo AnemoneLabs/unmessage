@@ -1,34 +1,12 @@
 import os
 import re
 from functools import wraps
-from threading import Event
 
 import attr
 from nacl.public import PublicKey
 from twisted.internet.threads import deferToThread as fork
 
 from . import errors
-
-
-def join(d):
-    results = [None, None]
-    event = Event()
-
-    def callback(result):
-        results[0] = result
-        event.set()
-
-    def errback(failure):
-        results[1] = failure
-        event.set()
-
-    d.addCallbacks(callback, errback)
-    event.wait()
-
-    if results[1]:
-        results[1].raiseException()
-    else:
-        return results[0]
 
 
 def default_factory_attrib(factory, init=False, takes_self=True):

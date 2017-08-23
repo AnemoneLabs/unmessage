@@ -414,47 +414,34 @@ class Cli(PeerUi):
         if len(message):
             conv = self.peer.get_conversation(name)
             self.active_conv = conv
-            yield self.peer.send_message(name, message)
+            yield self.peer.send_message(conv, message)
             handler = self._handlers_conv[name]
             handler.display_message(message, is_receiving=False)
 
+    @displays_error
+    @inlineCallbacks
     def send_file(self, name, file_path):
-        def file_sent(result):
-            self.display_info(
-                'File request for "{}" sent to {}'.format(
-                    result.element.content,
-                    name))
+        transfer = yield self.peer.send_file(
+            self.peer.get_conversation(name), file_path)
+        self.display_info(
+            'File request for "{}" sent to {}'.format(
+                transfer.element.content, name))
 
-        def file_failed(failure):
-            if failure.check(errors.UnmessageError):
-                error = failure.value
-            else:
-                error = errors.UnmessageError(failure.getErrorMessage())
-            self.display_attention(error.message, error.title, error=True)
-
-        d = self.peer.send_file(name, file_path)
-        d.addCallbacks(file_sent, file_failed)
-
+    @displays_error
+    @inlineCallbacks
     def accept_file(self, name, checksum, file_path=None):
-        def file_sent(result):
-            self.display_info(
-                'Accepted receiving "{}" from {}'.format(
-                    result.element.content,
-                    name))
+        transfer = yield self.peer.accept_file(
+            self.peer.get_conversation(name), checksum, file_path)
+        self.display_info(
+            'Accepted receiving "{}" from {}'.format(
+                transfer.element.content, name))
 
-        def file_failed(failure):
-            if failure.check(errors.UnmessageError):
-                error = failure.value
-            else:
-                error = errors.UnmessageError(failure.getErrorMessage())
-            self.display_attention(error.message, error.title, error=True)
-
-        d = self.peer.accept_file(name, checksum, file_path)
-        d.addCallbacks(file_sent, file_failed)
-
+    @displays_error
     def save_file(self, name, checksum, file_path=None):
         try:
-            self.peer.save_file(name, checksum, file_path)
+            self.peer.save_file(self.peer.get_conversation(name),
+                                checksum,
+                                file_path)
         except Exception as e:
             self.display_attention(title=str(type(e)),
                                    message=e.message,
@@ -463,7 +450,8 @@ class Cli(PeerUi):
     @displays_error
     @displays_result
     def untalk(self, name, input_device=None, output_device=None):
-        return self.peer.untalk(name, input_device, output_device)
+        return self.peer.untalk(self.peer.get_conversation(name),
+                                input_device, output_device)
 
     def display_audio_devices(self):
         devices = self.peer.get_audio_devices()
@@ -505,7 +493,8 @@ class Cli(PeerUi):
     @displays_error
     @displays_result
     def authenticate(self, name, secret):
-        return self.peer.authenticate(name, secret=secret)
+        return self.peer.authenticate(self.peer.get_conversation(name),
+                                      secret=secret)
 
     def notify_bootstrap(self, notification):
         self.display_info(notification.message)

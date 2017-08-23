@@ -2,7 +2,7 @@ from os.path import join
 
 import pytest
 
-from unmessage.peer import Peer, ConversationPaths, PeerPaths
+from unmessage.peer import ConversationPaths, PeerPaths
 
 
 @pytest.inlineCallbacks

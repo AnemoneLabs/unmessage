@@ -1,4 +1,3 @@
-import errno
 import os
 import pytest
 from twisted.internet import defer
@@ -12,11 +11,8 @@ slow_option = '--run-slow'
 
 
 def remove_file(file_path):
-    try:
+    if os.path.exists(file_path):
         os.remove(file_path)
-    except OSError as e:
-        if e.errno != errno.ENOENT:
-            raise
 
 
 def create_peer(name, reactor):
