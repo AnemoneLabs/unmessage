@@ -38,7 +38,7 @@ def is_valid_length(value, length):
 
 def is_valid_non_empty(value):
     try:
-        return isinstance(value, str) and len(a2b(value))
+        return isinstance(value, str) and len(a2b(value)) > 0
     except TypeError:
         return False
 
