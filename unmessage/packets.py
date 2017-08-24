@@ -65,9 +65,6 @@ def is_valid_empty(value):
 
 @attr.s
 class Packet(object):
-    iv = attr.ib(validator=raise_if_not(is_valid_iv))
-    iv_hash = attr.ib(validator=raise_if_not(is_valid_hash))
-
     @classmethod
     @raise_malformed
     def build(cls, data):
@@ -75,7 +72,13 @@ class Packet(object):
 
 
 @attr.s
-class IntroductionPacket(Packet):
+class IdentifiablePacket(Packet):
+    iv = attr.ib(validator=raise_if_not(is_valid_iv))
+    iv_hash = attr.ib(validator=raise_if_not(is_valid_hash))
+
+
+@attr.s
+class IntroductionPacket(IdentifiablePacket):
     tail = attr.ib(validator=raise_if_not(is_valid_non_empty))
 
     @classmethod
@@ -88,7 +91,7 @@ class IntroductionPacket(Packet):
 
 
 @attr.s
-class RegularPacket(Packet):
+class RegularPacket(IdentifiablePacket):
     payload_hash = attr.ib(validator=raise_if_not(is_valid_hash))
     handshake_key = attr.ib(validator=raise_if_not(is_valid_empty))
     payload = attr.ib(validator=raise_if_not(is_valid_non_empty))
@@ -102,7 +105,7 @@ class RegularPacket(Packet):
 
 
 @attr.s
-class ReplyPacket(Packet):
+class ReplyPacket(IdentifiablePacket):
     payload_hash = attr.ib(validator=raise_if_not(is_valid_hash))
     handshake_key = attr.ib(validator=raise_if_not(is_valid_enc_key))
     payload = attr.ib(validator=raise_if_not(is_valid_non_empty))
@@ -116,7 +119,7 @@ class ReplyPacket(Packet):
 
 
 @attr.s
-class RequestPacket(Packet):
+class RequestPacket(IdentifiablePacket):
     handshake_packet_hash = attr.ib(validator=raise_if_not(is_valid_hash))
     request_key = attr.ib(validator=raise_if_not(is_valid_key))
     handshake_packet = attr.ib(raise_if_not(is_valid_non_empty))
