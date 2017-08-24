@@ -308,3 +308,19 @@ def test_build_handshake_packet(identity,
     else:
         with pytest.raises(errors.MalformedPacketError):
             packets.HandshakePacket.build(data)
+
+
+PACKET_TYPES = {v[0].__name__: v
+                for v in [(packets.IntroductionPacket, VALID_INTRO_PARTS),
+                          (packets.RegularPacket, VALID_REGULAR_PARTS),
+                          (packets.ReplyPacket, VALID_REPLY_PARTS),
+                          (packets.RequestPacket, VALID_REQUEST_PARTS),
+                          (packets.HandshakePacket, VALID_HANDSHAKE_PARTS)]}
+
+
+@pytest.mark.parametrize(('packet_type', 'parts'),
+                         PACKET_TYPES.values(),
+                         ids=PACKET_TYPES.keys())
+def test_build_pack(packet_type, parts):
+    data = join_encode_data(parts)
+    assert str(packet_type.build(data)) == data
