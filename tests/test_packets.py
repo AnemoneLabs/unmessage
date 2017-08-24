@@ -1,12 +1,13 @@
 import pytest
 
-from hypothesis import example, given
-from hypothesis.strategies import binary
+from hypothesis import assume, example, given
+from hypothesis.strategies import binary, integers, text
 
 from nacl.utils import random
 from unmessage import errors
 from unmessage import packets
-from pyaxo import b2a
+from pyaxo import a2b, b2a
+from twisted.python.compat import nativeString
 
 
 CORRECT_LEN_INTRO_DATA = random(1)
@@ -17,6 +18,102 @@ CORRECT_LEN_ENC_KEY = random(packets.ENC_KEY_LEN)
 CORRECT_LEN_PAYLOAD = random(1)
 CORRECT_LEN_HANDSHAKE_PACKET = random(1)
 CORRECT_LEN_IDENTITY = random(1)
+
+
+def is_ascii_encodable(value):
+    try:
+        nativeString(value)
+    except (TypeError, UnicodeError):
+        return False
+    else:
+        return True
+
+
+@given(
+    text(),
+    integers(),
+)
+@example(
+    b2a(random(1)),
+    1,
+)
+@example(
+    b2a(random(1)),
+    2,
+)
+def test_is_valid_b64_length(value, length):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not packets.is_valid_length(ascii_value, length)
+    else:
+        assert (packets.is_valid_length(ascii_value, length) is
+                (len(byte_value) == length))
+
+
+@given(
+    text(),
+)
+@example(
+    b2a(random(1)),
+)
+@example(
+    '',
+)
+def test_is_valid_non_empty_b64(value):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not packets.is_valid_non_empty(ascii_value)
+    else:
+        assert packets.is_valid_non_empty(ascii_value) is (len(byte_value) > 0)
+
+
+LEN_VALIDATORS = {v[0].__name__: v
+                  for v in [(packets.is_valid_iv, packets.IV_LEN),
+                            (packets.is_valid_key, packets.KEY_LEN),
+                            (packets.is_valid_enc_key, packets.ENC_KEY_LEN),
+                            (packets.is_valid_hash, packets.HASH_LEN),
+                            (packets.is_valid_empty, 0)]}
+
+
+@given(
+    text(),
+)
+@example(
+    b2a(random(packets.IV_LEN)),
+)
+@example(
+    b2a(random(packets.KEY_LEN)),
+)
+@example(
+    b2a(random(packets.ENC_KEY_LEN)),
+)
+@example(
+    b2a(random(packets.HASH_LEN)),
+)
+@example(
+    '',
+)
+@pytest.mark.parametrize(('validator', 'length'),
+                         LEN_VALIDATORS.values(),
+                         ids=LEN_VALIDATORS.keys())
+def test_length_validators(validator, length, value):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not validator(ascii_value)
+    else:
+        assert validator(ascii_value) is (len(byte_value) == length)
 
 
 def join_encode_data(lines):
