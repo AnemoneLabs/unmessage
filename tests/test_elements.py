@@ -7,19 +7,6 @@ from unmessage.elements import ID_LENGTH, get_random_id
 from unmessage.packets import ElementPacket
 
 
-def test_serialize_element_payload(element, serialized_payload):
-    assert element.serialize() == serialized_payload
-
-
-def test_deserialize_element_payload(content, serialized_payload):
-    assert (Element.deserialize(serialized_payload) ==
-            Element(content))
-
-
-def test_serialize_deserialize_element_payload(element):
-    assert Element.deserialize(element.serialize()) == element
-
-
 ELEMENT_CLASSES = {cls.__name__: cls for cls in Element.__subclasses__()}
 
 
