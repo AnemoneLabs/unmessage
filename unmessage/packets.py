@@ -116,22 +116,11 @@ class RequestPacket(IdentifiablePacket):
 
 
 @attr.s
-class HandshakePacket(object):
+class HandshakePacket(Packet):
     identity = attr.ib(validator=attr.validators.instance_of(str))
     identity_key = attr.ib(validator=raise_if_not(is_valid_key))
     handshake_key = attr.ib(validator=raise_if_not(is_valid_key))
     ratchet_key = attr.ib(validator=raise_if_not(is_valid_key))
-
-    @classmethod
-    @raise_malformed
-    def build(cls, data):
-        return cls(*data.splitlines())
-
-    def __str__(self):
-        return LINESEP.join([self.identity,
-                             self.identity_key,
-                             self.handshake_key,
-                             self.ratchet_key])
 
 
 @attr.s
