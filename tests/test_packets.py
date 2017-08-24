@@ -9,6 +9,8 @@ from unmessage import packets
 from pyaxo import a2b, b2a
 from twisted.python.compat import nativeString
 
+from .utils import slow
+
 
 CORRECT_LEN_INTRO_DATA = random(1)
 CORRECT_LEN_IV = random(packets.IV_LEN)
@@ -83,6 +85,7 @@ LEN_VALIDATORS = {v[0].__name__: v
                             (packets.is_valid_empty, 0)]}
 
 
+@slow
 @given(
     text(),
 )
