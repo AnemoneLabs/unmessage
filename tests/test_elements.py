@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pyaxo import hash_, a2b, b2a
 
@@ -5,19 +7,6 @@ from unmessage import errors
 from unmessage.elements import Element, FileRequestElement, PartialElement
 from unmessage.elements import ID_LENGTH, get_random_id
 from unmessage.packets import ElementPacket
-
-
-def test_serialize_element_payload(element, serialized_payload):
-    assert element.serialize() == serialized_payload
-
-
-def test_deserialize_element_payload(content, serialized_payload):
-    assert (Element.deserialize(serialized_payload) ==
-            Element(content))
-
-
-def test_serialize_deserialize_element_payload(element):
-    assert Element.deserialize(element.serialize()) == element
 
 
 ELEMENT_CLASSES = {cls.__name__: cls for cls in Element.__subclasses__()}
@@ -86,7 +75,7 @@ def test_get_random_element_id():
 
 @pytest.fixture
 def serialized_payload(content):
-    return '{{"content": "{}"}}'.format(content)
+    return json.dumps({'content': content})
 
 
 @pytest.fixture
@@ -100,12 +89,10 @@ def file_checksum():
 
 
 @pytest.fixture
-def file_request_serialized_payload(content, file_size, file_checksum):
-    return ('{{'
-            '"content": "{}", '
-            '"checksum": "{}", '
-            '"size": {}'
-            '}}'.format(content, file_checksum, file_size))
+def file_request_serialized_payload(content, file_checksum, file_size):
+    return json.dumps({'content': content,
+                       'checksum': file_checksum,
+                       'size': file_size})
 
 
 @pytest.fixture

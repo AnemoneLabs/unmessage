@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from functools import wraps
@@ -7,6 +8,25 @@ from nacl.public import PublicKey
 from twisted.internet.threads import deferToThread as fork
 
 from . import errors
+
+
+@attr.s
+class Serializable(object):
+    filtered_attr_names = None
+
+    @classmethod
+    def filter_attrs(cls, attribute, value=None):
+        if cls.filtered_attr_names is None:
+            return True
+        else:
+            return attribute.name in cls.filtered_attr_names
+
+    @classmethod
+    def deserialize(cls, data):
+        return cls(**json.loads(data))
+
+    def serialize(self):
+        return json.dumps(attr.asdict(self, filter=self.filter_attrs))
 
 
 def default_factory_attrib(factory, init=False, takes_self=True):
