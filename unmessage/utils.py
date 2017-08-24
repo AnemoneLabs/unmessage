@@ -15,7 +15,7 @@ class Serializable(object):
     filtered_attr_names = None
 
     @classmethod
-    def filter_attrs(cls, attribute, value):
+    def filter_attrs(cls, attribute, value=None):
         if cls.filtered_attr_names is None:
             return True
         else:
