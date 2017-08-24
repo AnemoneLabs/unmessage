@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pyaxo import hash_, a2b, b2a
 
@@ -73,7 +75,7 @@ def test_get_random_element_id():
 
 @pytest.fixture
 def serialized_payload(content):
-    return '{{"content": "{}"}}'.format(content)
+    return json.dumps({'content': content})
 
 
 @pytest.fixture
@@ -87,12 +89,10 @@ def file_checksum():
 
 
 @pytest.fixture
-def file_request_serialized_payload(content, file_size, file_checksum):
-    return ('{{'
-            '"content": "{}", '
-            '"checksum": "{}", '
-            '"size": {}'
-            '}}'.format(content, file_checksum, file_size))
+def file_request_serialized_payload(content, file_checksum, file_size):
+    return json.dumps({'content': content,
+                       'checksum': file_checksum,
+                       'size': file_size})
 
 
 @pytest.fixture
