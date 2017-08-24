@@ -76,7 +76,7 @@ class Packet(object):
 
 @attr.s
 class IntroductionPacket(Packet):
-    data = attr.ib(validator=raise_if_not(is_valid_non_empty))
+    tail = attr.ib(validator=raise_if_not(is_valid_non_empty))
 
     @classmethod
     @raise_malformed
@@ -84,10 +84,7 @@ class IntroductionPacket(Packet):
         lines = data.splitlines()
         return cls(iv=lines[0],
                    iv_hash=lines[1],
-                   data=data)
-
-    def __str__(self):
-        return self.data
+                   tail=LINESEP.join(lines[2:]))
 
 
 @attr.s
