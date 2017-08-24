@@ -30,17 +30,17 @@ def raise_malformed(f):
 
 
 def is_valid_length(value, length):
-        try:
-            return isinstance(value, str) and len(a2b(value)) == length
-        except TypeError:
-            return False
+    try:
+        return isinstance(value, str) and len(a2b(value)) == length
+    except TypeError:
+        return False
 
 
 def is_valid_non_empty(value):
-        try:
-            return isinstance(value, str) and len(a2b(value))
-        except TypeError:
-            return False
+    try:
+        return isinstance(value, str) and len(a2b(value))
+    except TypeError:
+        return False
 
 
 def is_valid_iv(value):
