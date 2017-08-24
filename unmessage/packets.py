@@ -70,6 +70,10 @@ class Packet(object):
     def build(cls, data):
         return cls(*data.splitlines())
 
+    def __str__(self):
+        return LINESEP.join([str(getattr(self, a.name))
+                             for a in attr.fields(type(self))])
+
 
 @attr.s
 class IdentifiablePacket(Packet):
@@ -96,13 +100,6 @@ class RegularPacket(IdentifiablePacket):
     handshake_key = attr.ib(validator=raise_if_not(is_valid_empty))
     payload = attr.ib(validator=raise_if_not(is_valid_non_empty))
 
-    def __str__(self):
-        return LINESEP.join([self.iv,
-                             self.iv_hash,
-                             self.payload_hash,
-                             self.handshake_key,
-                             self.payload])
-
 
 @attr.s
 class ReplyPacket(IdentifiablePacket):
@@ -110,26 +107,12 @@ class ReplyPacket(IdentifiablePacket):
     handshake_key = attr.ib(validator=raise_if_not(is_valid_enc_key))
     payload = attr.ib(validator=raise_if_not(is_valid_non_empty))
 
-    def __str__(self):
-        return LINESEP.join([self.iv,
-                             self.iv_hash,
-                             self.payload_hash,
-                             self.handshake_key,
-                             self.payload])
-
 
 @attr.s
 class RequestPacket(IdentifiablePacket):
     handshake_packet_hash = attr.ib(validator=raise_if_not(is_valid_hash))
     request_key = attr.ib(validator=raise_if_not(is_valid_key))
     handshake_packet = attr.ib(raise_if_not(is_valid_non_empty))
-
-    def __str__(self):
-        return LINESEP.join([self.iv,
-                             self.iv_hash,
-                             self.handshake_packet_hash,
-                             self.request_key,
-                             str(self.handshake_packet)])
 
 
 @attr.s
