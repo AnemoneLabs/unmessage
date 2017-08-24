@@ -107,4 +107,5 @@ def id_():
 
 @pytest.fixture
 def packet(element, id_):
-    return ElementPacket(element.type_, element.serialize(), id_)
+    return ElementPacket(element.type_, id_,
+                         part_num=0, part_len=1, payload=element.serialize())

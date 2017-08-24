@@ -124,12 +124,12 @@ class HandshakePacket(Packet):
 
 
 @attr.s
-class ElementPacket(object):
+class ElementPacket(Packet):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
-    payload = attr.ib(validator=attr.validators.instance_of(str))
     id_ = attr.ib(validator=attr.validators.instance_of(str))
-    part_num = attr.ib(default=0, convert=int)
-    part_len = attr.ib(default=1, convert=int)
+    part_num = attr.ib(convert=int)
+    part_len = attr.ib(convert=int)
+    payload = attr.ib(validator=attr.validators.instance_of(str))
 
     @classmethod
     @raise_malformed
@@ -140,10 +140,3 @@ class ElementPacket(object):
                    part_num=lines[2],
                    part_len=lines[3],
                    payload=LINESEP.join(lines[4:]))
-
-    def __str__(self):
-        return LINESEP.join([self.type_,
-                             self.id_,
-                             str(self.part_num),
-                             str(self.part_len),
-                             self.payload])
