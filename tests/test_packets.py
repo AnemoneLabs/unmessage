@@ -1,12 +1,15 @@
 import pytest
 
-from hypothesis import example, given
-from hypothesis.strategies import binary
+from hypothesis import assume, example, given
+from hypothesis.strategies import binary, integers, text
 
 from nacl.utils import random
 from unmessage import errors
 from unmessage import packets
-from pyaxo import b2a
+from pyaxo import a2b, b2a
+from twisted.python.compat import nativeString
+
+from .utils import slow
 
 
 CORRECT_LEN_INTRO_DATA = random(1)
@@ -19,8 +22,112 @@ CORRECT_LEN_HANDSHAKE_PACKET = random(1)
 CORRECT_LEN_IDENTITY = random(1)
 
 
+def is_ascii_encodable(value):
+    try:
+        nativeString(value)
+    except (TypeError, UnicodeError):
+        return False
+    else:
+        return True
+
+
+@given(
+    text(),
+    integers(),
+)
+@example(
+    b2a(random(1)),
+    1,
+)
+@example(
+    b2a(random(1)),
+    2,
+)
+def test_is_valid_b64_length(value, length):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not packets.is_valid_length(ascii_value, length)
+    else:
+        assert (packets.is_valid_length(ascii_value, length) is
+                (len(byte_value) == length))
+
+
+@given(
+    text(),
+)
+@example(
+    b2a(random(1)),
+)
+@example(
+    '',
+)
+def test_is_valid_non_empty_b64(value):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not packets.is_valid_non_empty(ascii_value)
+    else:
+        assert packets.is_valid_non_empty(ascii_value) is (len(byte_value) > 0)
+
+
+LEN_VALIDATORS = {v[0].__name__: v
+                  for v in [(packets.is_valid_iv, packets.IV_LEN),
+                            (packets.is_valid_key, packets.KEY_LEN),
+                            (packets.is_valid_enc_key, packets.ENC_KEY_LEN),
+                            (packets.is_valid_hash, packets.HASH_LEN),
+                            (packets.is_valid_empty, 0)]}
+
+
+@slow
+@given(
+    text(),
+)
+@example(
+    b2a(random(packets.IV_LEN)),
+)
+@example(
+    b2a(random(packets.KEY_LEN)),
+)
+@example(
+    b2a(random(packets.ENC_KEY_LEN)),
+)
+@example(
+    b2a(random(packets.HASH_LEN)),
+)
+@example(
+    '',
+)
+@pytest.mark.parametrize(('validator', 'length'),
+                         LEN_VALIDATORS.values(),
+                         ids=LEN_VALIDATORS.keys())
+def test_length_validators(validator, length, value):
+    assume(is_ascii_encodable(value))
+
+    ascii_value = nativeString(value)
+    try:
+        byte_value = a2b(ascii_value)
+    except TypeError:
+        assert not validator(ascii_value)
+    else:
+        assert validator(ascii_value) is (len(byte_value) == length)
+
+
 def join_encode_data(lines):
     return packets.LINESEP.join([b2a(l) for l in lines])
+
+
+VALID_INTRO_PARTS = [
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_INTRO_DATA,
+]
 
 
 @given(
@@ -29,9 +136,7 @@ def join_encode_data(lines):
     binary(),
 )
 @example(
-    CORRECT_LEN_IV,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_INTRO_DATA,
+    *VALID_INTRO_PARTS
 )
 def test_build_intro_packet(iv,
                             iv_hash,
@@ -49,6 +154,15 @@ def test_build_intro_packet(iv,
             packets.IntroductionPacket.build(data)
 
 
+VALID_REGULAR_PARTS = [
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_HASH,
+    '',
+    CORRECT_LEN_PAYLOAD,
+]
+
+
 @given(
     binary(),
     binary(),
@@ -57,11 +171,7 @@ def test_build_intro_packet(iv,
     binary(),
 )
 @example(
-    CORRECT_LEN_IV,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_HASH,
-    '',
-    CORRECT_LEN_PAYLOAD,
+    *VALID_REGULAR_PARTS
 )
 def test_build_regular_packet(iv,
                               iv_hash,
@@ -85,6 +195,15 @@ def test_build_regular_packet(iv,
             packets.RegularPacket.build(data)
 
 
+VALID_REPLY_PARTS = [
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_ENC_KEY,
+    CORRECT_LEN_PAYLOAD,
+]
+
+
 @given(
     binary(),
     binary(),
@@ -93,11 +212,7 @@ def test_build_regular_packet(iv,
     binary(),
 )
 @example(
-    CORRECT_LEN_IV,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_ENC_KEY,
-    CORRECT_LEN_PAYLOAD,
+    *VALID_REPLY_PARTS
 )
 def test_build_reply_packet(iv,
                             iv_hash,
@@ -121,6 +236,15 @@ def test_build_reply_packet(iv,
             packets.ReplyPacket.build(data)
 
 
+VALID_REQUEST_PARTS = [
+    CORRECT_LEN_IV,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_HASH,
+    CORRECT_LEN_KEY,
+    CORRECT_LEN_HANDSHAKE_PACKET,
+]
+
+
 @given(
     binary(),
     binary(),
@@ -129,11 +253,7 @@ def test_build_reply_packet(iv,
     binary(),
 )
 @example(
-    CORRECT_LEN_IV,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_HASH,
-    CORRECT_LEN_KEY,
-    CORRECT_LEN_HANDSHAKE_PACKET,
+    *VALID_REQUEST_PARTS
 )
 def test_build_request_packet(iv,
                               iv_hash,
@@ -157,6 +277,14 @@ def test_build_request_packet(iv,
             packets.RequestPacket.build(data)
 
 
+VALID_HANDSHAKE_PARTS = [
+    CORRECT_LEN_IDENTITY,
+    CORRECT_LEN_KEY,
+    CORRECT_LEN_KEY,
+    CORRECT_LEN_KEY,
+]
+
+
 @given(
     binary(),
     binary(),
@@ -164,10 +292,7 @@ def test_build_request_packet(iv,
     binary(),
 )
 @example(
-    CORRECT_LEN_IDENTITY,
-    CORRECT_LEN_KEY,
-    CORRECT_LEN_KEY,
-    CORRECT_LEN_KEY,
+    *VALID_HANDSHAKE_PARTS
 )
 def test_build_handshake_packet(identity,
                                 identity_key,
@@ -186,3 +311,19 @@ def test_build_handshake_packet(identity,
     else:
         with pytest.raises(errors.MalformedPacketError):
             packets.HandshakePacket.build(data)
+
+
+PACKET_TYPES = {v[0].__name__: v
+                for v in [(packets.IntroductionPacket, VALID_INTRO_PARTS),
+                          (packets.RegularPacket, VALID_REGULAR_PARTS),
+                          (packets.ReplyPacket, VALID_REPLY_PARTS),
+                          (packets.RequestPacket, VALID_REQUEST_PARTS),
+                          (packets.HandshakePacket, VALID_HANDSHAKE_PARTS)]}
+
+
+@pytest.mark.parametrize(('packet_type', 'parts'),
+                         PACKET_TYPES.values(),
+                         ids=PACKET_TYPES.keys())
+def test_build_pack(packet_type, parts):
+    data = join_encode_data(parts)
+    assert str(packet_type.build(data)) == data

@@ -66,10 +66,10 @@ class PartialElement(dict):
         packets = list()
         for part_num, part in self.items():
             packets.append(ElementPacket(self.type_,
-                                         part,
                                          self.id_,
                                          part_num,
-                                         self.part_len))
+                                         self.part_len,
+                                         part))
         return packets
 
     def to_element(self):
