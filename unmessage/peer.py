@@ -144,7 +144,7 @@ class Peer(object):
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._name = self._peer_name
-        self._element_parser = ElementParser(self)
+        self._element_parser = ElementParser()
 
         self._axolotl = Axolotl(name=self.name,
                                 dbname=self._paths.axolotl_db,
@@ -1680,8 +1680,6 @@ class ElementParser(object):
                      PresenceElement: Conversation.parse_presence_element,
                      MessageElement: Conversation.parse_message_element,
                      AuthenticationElement: AuthSession.parse_auth_element}
-
-    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
 
     log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
 
