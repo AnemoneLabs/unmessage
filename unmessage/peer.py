@@ -115,7 +115,6 @@ class Peer(object):
     _conversations = attr.ib(init=False, default=attr.Factory(dict))
     _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
     _outbound_requests = attr.ib(init=False, default=attr.Factory(dict))
-    _element_parser = attr.ib(init=False)
 
     _tor = attr.ib(init=False, default=None)
     _onion_service = attr.ib(init=False, default=None)
@@ -143,7 +142,6 @@ class Peer(object):
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._name = self._peer_name
-        self._element_parser = ElementParser()
 
         self._axolotl = Axolotl(name=self.name,
                                 dbname=self._paths.axolotl_db,
@@ -587,9 +585,8 @@ class Peer(object):
         if partial.is_complete:
             # it can be parsed as all parts have been added to the
             # ``PartialElement`` or it is composed of a single part
-            return self._element_parser.parse(partial.to_element(),
-                                              conversation,
-                                              connection)
+            return conversation.receive_element(partial.to_element(),
+                                                connection)
         else:
             # the ``PartialElement`` has parts yet to be received
             pass
@@ -1143,6 +1140,14 @@ class Conversation(object):
                       Conversation.state_conv: self.receive_conversation_data},
         takes_self=True))
 
+    _receive_element_methods = attr.ib(init=False, default=attr.Factory(
+        lambda: {FileRequestElement: FileSession.parse_request_element,
+                 FileElement: FileSession.parse_file_element,
+                 UntalkElement: untalk.UntalkSession.parse_untalk_element,
+                 PresenceElement: Conversation.parse_presence_element,
+                 MessageElement: Conversation.parse_message_element,
+                 AuthenticationElement: AuthSession.parse_auth_element}))
+
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
@@ -1278,6 +1283,16 @@ class Conversation(object):
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
+
+    def receive_element(self, element, connection=None):
+        self.log.debug('Parsing element of type: {element.__class__.__name__}',
+                       element=element)
+        try:
+            method = self._receive_element_methods[type(element)]
+        except KeyError:
+            raise errors.UnknownElementError(element.type_)
+        else:
+            return method(element, self, connection)
 
     def set_active(self, connection, state):
         connection.add_manager(self)
@@ -1696,28 +1711,6 @@ class FileTransfer(object):
     file_path = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(str)),
         default=None)
-
-
-@attr.s
-class ElementParser(object):
-    parse_methods = {FileRequestElement: FileSession.parse_request_element,
-                     FileElement: FileSession.parse_file_element,
-                     UntalkElement: untalk.UntalkSession.parse_untalk_element,
-                     PresenceElement: Conversation.parse_presence_element,
-                     MessageElement: Conversation.parse_message_element,
-                     AuthenticationElement: AuthSession.parse_auth_element}
-
-    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
-
-    def parse(self, element, conversation, connection=None):
-        self.log.debug('Parsing element of type: {element.__class__.__name__}',
-                       element=element)
-        try:
-            method = ElementParser.parse_methods[type(element)]
-        except KeyError:
-            raise errors.UnknownElementError(element.type_)
-        else:
-            return method(element, conversation, connection)
 
 
 @attr.s
