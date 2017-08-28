@@ -26,7 +26,6 @@ from . import elements
 from . import errors
 from . import notifications
 from . import packets
-from . import requests
 from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
@@ -377,7 +376,7 @@ class Peer(object):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
         iv = random(packets.IV_LEN)
 
-        req = requests.OutboundRequest(Conversation(self, contact))
+        req = OutboundRequest(Conversation(self, contact))
         req.request_keys = pyaxo.generate_keypair()
         req.handshake_keys = pyaxo.generate_keypair()
         req.ratchet_keys = pyaxo.generate_keypair()
@@ -432,9 +431,7 @@ class Peer(object):
                               a2b(req_packet.handshake_packet.identity_key))
             conv = Conversation(self, contact, request_keys=request_keys)
 
-            return requests.InboundRequest(
-                conversation=conv,
-                packet=req_packet)
+            return InboundRequest(conversation=conv, packet=req_packet)
         else:
             raise errors.CorruptedPacketError()
 
@@ -1355,6 +1352,35 @@ class ConversationKeys(object):
         self.iv_hash_key = pyaxo.kdf(self.key, self.iv_hash_salt)
         self.payload_hash_key = pyaxo.kdf(self.key, self.payload_hash_salt)
         self.auth_secret_key = pyaxo.kdf(self.key, self.auth_secret_salt)
+
+
+@attr.s
+class InboundRequest(object):
+    conversation = attr.ib(validator=attr.validators.instance_of(Conversation))
+    packet = attr.ib(
+        validator=attr.validators.instance_of(packets.RequestPacket))
+
+
+@attr.s
+class OutboundRequest(object):
+    conversation = attr.ib(
+        validator=attr.validators.instance_of(Conversation))
+    request_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    handshake_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    ratchet_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    packet = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(packets.RequestPacket)),
+        default=None)
 
 
 @attr.s
