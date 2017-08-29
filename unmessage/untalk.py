@@ -166,7 +166,9 @@ class UntalkSession(object):
             self.decode_fec = int(decode_fec)
 
         self.jitter_buffer = Queue()
-        self.codec = OpusCodec(self)
+        self.codec = OpusCodec(self.frame_size,
+                               self.loss_percentage,
+                               self.decode_fec)
 
     def start(self, other_handshake_key=None):
         if other_handshake_key:
@@ -338,7 +340,9 @@ class OpusCodec(object):
     OpusCodec class modified from:
     https://stackoverflow.com/questions/17728706/python-portaudio-opus-encoding-decoding
     """
-    untalk = attr.ib(validator=attr.validators.instance_of(UntalkSession))
+    frame_size = attr.ib(validator=attr.validators.instance_of(int))
+    loss_percentage = attr.ib(validator=attr.validators.instance_of(int))
+    decode_fec = attr.ib(validator=attr.validators.instance_of(int))
     encoder = attr.ib(init=False)
     decoder = attr.ib(init=False)
 
@@ -357,25 +361,25 @@ class OpusCodec(object):
         # configure expected jitter loss
         opus_encoder.ctl(self.encoder,
                          opus_ctl.set_packet_loss_perc,
-                         self.untalk.loss_percentage)
+                         self.loss_percentage)
 
         # configure forward error correction (FEC)
         opus_encoder.ctl(self.encoder,
                          opus_ctl.set_inband_fec,
-                         self.untalk.decode_fec)
+                         self.decode_fec)
 
     def encode(self, data):
         return opus_encoder.encode(self.encoder,
                                    pcm=data,
-                                   frame_size=self.untalk.frame_size,
+                                   frame_size=self.frame_size,
                                    max_data_bytes=len(data))
 
     def decode(self, data):
         return opus_decoder.decode(self.decoder,
                                    data,
                                    length=len(data),
-                                   frame_size=self.untalk.frame_size,
-                                   decode_fec=self.untalk.decode_fec,
+                                   frame_size=self.frame_size,
+                                   decode_fec=self.decode_fec,
                                    channels=CHANNELS)
 
 

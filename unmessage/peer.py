@@ -26,7 +26,6 @@ from . import elements
 from . import errors
 from . import notifications
 from . import packets
-from . import requests
 from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
@@ -116,7 +115,6 @@ class Peer(object):
     _conversations = attr.ib(init=False, default=attr.Factory(dict))
     _inbound_requests = attr.ib(init=False, default=attr.Factory(dict))
     _outbound_requests = attr.ib(init=False, default=attr.Factory(dict))
-    _element_parser = attr.ib(init=False)
 
     _tor = attr.ib(init=False, default=None)
     _onion_service = attr.ib(init=False, default=None)
@@ -144,7 +142,6 @@ class Peer(object):
         self.log.info('{} {}'.format(APP_NAME, __version__))
 
         self._name = self._peer_name
-        self._element_parser = ElementParser(self)
 
         self._axolotl = Axolotl(name=self.name,
                                 dbname=self._paths.axolotl_db,
@@ -377,7 +374,7 @@ class Peer(object):
         """Create an ``OutboundRequest`` to be sent to a ``Contact``."""
         iv = random(packets.IV_LEN)
 
-        req = requests.OutboundRequest(Conversation(self, contact))
+        req = OutboundRequest(Conversation(self, contact))
         req.request_keys = pyaxo.generate_keypair()
         req.handshake_keys = pyaxo.generate_keypair()
         req.ratchet_keys = pyaxo.generate_keypair()
@@ -432,9 +429,7 @@ class Peer(object):
                               a2b(req_packet.handshake_packet.identity_key))
             conv = Conversation(self, contact, request_keys=request_keys)
 
-            return requests.InboundRequest(
-                conversation=conv,
-                packet=req_packet)
+            return InboundRequest(conversation=conv, packet=req_packet)
         else:
             raise errors.CorruptedPacketError()
 
@@ -590,9 +585,8 @@ class Peer(object):
         if partial.is_complete:
             # it can be parsed as all parts have been added to the
             # ``PartialElement`` or it is composed of a single part
-            return self._element_parser.parse(partial.to_element(),
-                                              conversation,
-                                              connection)
+            return conversation.receive_element(partial.to_element(),
+                                                connection)
         else:
             # the ``PartialElement`` has parts yet to be received
             pass
@@ -1146,6 +1140,14 @@ class Conversation(object):
                       Conversation.state_conv: self.receive_conversation_data},
         takes_self=True))
 
+    _receive_element_methods = attr.ib(init=False, default=attr.Factory(
+        lambda: {FileRequestElement: FileSession.parse_request_element,
+                 FileElement: FileSession.parse_file_element,
+                 UntalkElement: untalk.UntalkSession.parse_untalk_element,
+                 PresenceElement: Conversation.parse_presence_element,
+                 MessageElement: Conversation.parse_message_element,
+                 AuthenticationElement: AuthSession.parse_auth_element}))
+
     elements = attr.ib(init=False, default=attr.Factory(dict))
     elements_lock = attr.ib(init=False, default=attr.Factory(Lock))
 
@@ -1282,6 +1284,16 @@ class Conversation(object):
             # TODO maybe disconnect instead of ignoring the data
             pass
 
+    def receive_element(self, element, connection=None):
+        self.log.debug('Parsing element of type: {element.__class__.__name__}',
+                       element=element)
+        try:
+            method = self._receive_element_methods[type(element)]
+        except KeyError:
+            raise errors.UnknownElementError(element.type_)
+        else:
+            return method(element, self, connection)
+
     def set_active(self, connection, state):
         connection.add_manager(self)
         self.connection = connection
@@ -1355,6 +1367,35 @@ class ConversationKeys(object):
         self.iv_hash_key = pyaxo.kdf(self.key, self.iv_hash_salt)
         self.payload_hash_key = pyaxo.kdf(self.key, self.payload_hash_salt)
         self.auth_secret_key = pyaxo.kdf(self.key, self.auth_secret_salt)
+
+
+@attr.s
+class InboundRequest(object):
+    conversation = attr.ib(validator=attr.validators.instance_of(Conversation))
+    packet = attr.ib(
+        validator=attr.validators.instance_of(packets.RequestPacket))
+
+
+@attr.s
+class OutboundRequest(object):
+    conversation = attr.ib(
+        validator=attr.validators.instance_of(Conversation))
+    request_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    handshake_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    ratchet_keys = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(Keypair)),
+        default=None)
+    packet = attr.ib(
+        validator=attr.validators.optional(
+            attr.validators.instance_of(packets.RequestPacket)),
+        default=None)
 
 
 @attr.s
@@ -1670,30 +1711,6 @@ class FileTransfer(object):
     file_path = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(str)),
         default=None)
-
-
-@attr.s
-class ElementParser(object):
-    parse_methods = {FileRequestElement: FileSession.parse_request_element,
-                     FileElement: FileSession.parse_file_element,
-                     UntalkElement: untalk.UntalkSession.parse_untalk_element,
-                     PresenceElement: Conversation.parse_presence_element,
-                     MessageElement: Conversation.parse_message_element,
-                     AuthenticationElement: AuthSession.parse_auth_element}
-
-    peer = attr.ib(validator=attr.validators.instance_of(Peer), repr=False)
-
-    log = attr.ib(init=False, default=attr.Factory(loggerFor, takes_self=True))
-
-    def parse(self, element, conversation, connection=None):
-        self.log.debug('Parsing element of type: {element.__class__.__name__}',
-                       element=element)
-        try:
-            method = ElementParser.parse_methods[type(element)]
-        except KeyError:
-            raise errors.UnknownElementError(element.type_)
-        else:
-            return method(element, conversation, connection)
 
 
 @attr.s
