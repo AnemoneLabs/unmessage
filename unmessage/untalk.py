@@ -257,7 +257,7 @@ class UntalkSession(object):
         else:
             # the handshake still has to be completed using the handshake key
             # within this data and is processed as a regular packet
-            self.conversation.queue_in_data.put([data, self.connection])
+            self.conversation.receive_data(data, self.connection)
 
     def send_data(self, data):
         d = Deferred()
