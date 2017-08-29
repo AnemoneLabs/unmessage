@@ -84,6 +84,34 @@ To send a message to a peer, use the ``/msg`` command:
 
    ``/msg`` command
 
+Transmitting Files
+''''''''''''''''''
+unMessage also supports file transfers. Sending a request to transmit
+a file can be done with the ``/file-send`` command::
+
+    /file-send charlie ~/file.txt
+
+The other party will receive a notification with the file name, size
+and checksum. It can be authorized to be transmitted with the
+``/file-accept`` command::
+
+    /file-accept dory DiEjQOChrEorC0iPxrdNenBhiITaobehz5sQSkNnWIY=
+
+The file will be saved by default as
+``~/.config/unMessage/<your-peer>/conversations/<other-peer>/file-transfer/<original-file-name>``.
+The command also supports an optional argument for the path to save
+the file instead of using the default one::
+
+    /file-accept dory DiEjQOChrEorC0iPxrdNenBhiITaobehz5sQSkNnWIY= ~/dory.txt
+
+Once the initiator receives the confirmation, the file transfer is
+finally initialized and both parties are notified when it is complete.
+
+.. note::
+
+    unMessage currently only supports transmitting files smaller than
+    **50KB**, but will support bigger files in future versions.
+
 Notifying Presence
 ''''''''''''''''''
 If you wish to notify the peer whenever you go online or offline,
