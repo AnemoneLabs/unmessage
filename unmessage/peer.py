@@ -585,8 +585,8 @@ class Peer(object):
         if partial.is_complete:
             # it can be parsed as all parts have been added to the
             # ``PartialElement`` or it is composed of a single part
-            return conversation.receive_element(partial.to_element(),
-                                                connection)
+            return conversation._receive_element(partial.to_element(),
+                                                 connection)
         else:
             # the ``PartialElement`` has parts yet to be received
             pass
@@ -1284,7 +1284,7 @@ class Conversation(object):
             # TODO maybe disconnect instead of ignoring the data
             pass
 
-    def receive_element(self, element, connection=None):
+    def _receive_element(self, element, connection=None):
         self.log.debug('Parsing element of type: {element.__class__.__name__}',
                        element=element)
         try:
