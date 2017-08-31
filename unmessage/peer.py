@@ -556,26 +556,6 @@ class Peer(object):
 
         returnValue(manager)
 
-    def _receive_packet(self, packet, connection, conversation):
-        """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
-
-        Unwrap the element packet with decryption, process it and parse the
-        element.
-        """
-        element_packet = conversation._decrypt(packet)
-        partial = conversation._process_element_packet(
-            packet=element_packet,
-            sender=conversation.contact.name,
-            receiver=self.name)
-        if partial.is_complete:
-            # it can be parsed as all parts have been added to the
-            # ``PartialElement`` or it is composed of a single part
-            return conversation._receive_element(partial.to_element(),
-                                                 connection)
-        else:
-            # the ``PartialElement`` has parts yet to be received
-            pass
-
     @inlineCallbacks
     def _start_server(self, launch_tor):
         self._notify_bootstrap('Configuring local server')
@@ -1135,6 +1115,24 @@ class Conversation(object):
 
         returnValue(reg_packet)
 
+    def _receive_packet(self, packet, connection):
+        """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
+
+        Unwrap the element packet with decryption, process it and parse the
+        element.
+        """
+        element_packet = self._decrypt(packet)
+        partial = self._process_element_packet(packet=element_packet,
+                                               sender=self.contact.name,
+                                               receiver=self.peer.name)
+        if partial.is_complete:
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
+            return self._receive_element(partial.to_element(), connection)
+        else:
+            # the ``PartialElement`` has parts yet to be received
+            pass
+
     def _process_element_packet(self, packet, sender, receiver):
         with self.elements_lock:
             try:
@@ -1253,7 +1251,7 @@ class Conversation(object):
 
     def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        return self.peer._receive_packet(packet, connection, self)
+        return self._receive_packet(packet, connection)
 
     def receive_reply_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
