@@ -1175,6 +1175,10 @@ class Conversation(object):
             notifications.ElementNotification(element))
 
     @property
+    def has_persistence(self):
+        return self.peer.has_persistence
+
+    @property
     def is_authenticated(self):
         try:
             return self.auth_session.is_authenticated
