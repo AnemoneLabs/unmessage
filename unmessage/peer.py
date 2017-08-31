@@ -757,44 +757,6 @@ class Peer(object):
         return untalk.get_audio_devices()
 
     @inlineCallbacks
-    def untalk(self, conversation, input_device=None, output_device=None):
-        if conversation.is_active:
-            if self._can_talk(conversation):
-                untalk_session = (conversation.untalk_session or
-                                  conversation.init_untalk())
-                if untalk_session.is_talking:
-                    conversation.stop_untalk()
-                else:
-                    try:
-                        untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError:
-                        conversation.remove_manager(untalk_session)
-                        raise
-                    else:
-                        yield conversation._send_element(
-                            UntalkElement(
-                                b2a(untalk_session.handshake_keys.pub)))
-                        if (untalk_session.state ==
-                                untalk.UntalkSession.state_sent):
-                            notification = notifications.UntalkNotification(
-                                message='Voice conversation request sent '
-                                        'to {}'.format(
-                                            conversation.contact.name))
-                            returnValue(notification)
-                        else:
-                            # this peer has accepted the request
-                            conversation.start_untalk()
-            else:
-                raise errors.UntalkError(
-                    message='You can only make one voice conversation at a '
-                            'time')
-        else:
-            # TODO automatically connect and send request
-            raise errors.UntalkError(
-                message='You must be connected to {} in order to start a '
-                        'conversation'.format(conversation.contact.name))
-
-    @inlineCallbacks
     def send_message(self, conversation, plaintext):
         element = self._prepare_message(plaintext)
         yield conversation._send_element(element)
@@ -1346,6 +1308,42 @@ class Conversation(object):
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
         return self.auth_session
+
+    @inlineCallbacks
+    def untalk(self, input_device=None, output_device=None):
+        if self.is_active:
+            if self.peer._can_talk(self):
+                untalk_session = self.untalk_session or self.init_untalk()
+                if untalk_session.is_talking:
+                    self.stop_untalk()
+                else:
+                    try:
+                        untalk_session.configure(input_device, output_device)
+                    except untalk.AudioDeviceNotFoundError:
+                        self.remove_manager(untalk_session)
+                        raise
+                    else:
+                        yield self._send_element(
+                            UntalkElement(
+                                b2a(untalk_session.handshake_keys.pub)))
+                        if (untalk_session.state ==
+                                untalk.UntalkSession.state_sent):
+                            notification = notifications.UntalkNotification(
+                                message='Voice conversation request sent '
+                                        'to {}'.format(self.contact.name))
+                            returnValue(notification)
+                        else:
+                            # this peer has accepted the request
+                            self.start_untalk()
+            else:
+                raise errors.UntalkError(
+                    message='You can only make one voice conversation at a '
+                            'time')
+        else:
+            # TODO automatically connect and send request
+            raise errors.UntalkError(
+                message='You must be connected to {} in order to start a '
+                        'conversation'.format(self.contact.name))
 
 
 @attr.s

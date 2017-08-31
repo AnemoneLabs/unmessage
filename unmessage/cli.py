@@ -450,8 +450,8 @@ class Cli(PeerUi):
     @displays_error
     @displays_result
     def untalk(self, name, input_device=None, output_device=None):
-        return self.peer.untalk(self.peer.get_conversation(name),
-                                input_device, output_device)
+        return self.peer.get_conversation(name).untalk(input_device,
+                                                       output_device)
 
     def display_audio_devices(self):
         devices = self.peer.get_audio_devices()
