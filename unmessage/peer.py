@@ -576,7 +576,7 @@ class Peer(object):
         Unwrap the element packet with decryption, process it and parse the
         element.
         """
-        element_packet = self._decrypt(packet, conversation)
+        element_packet = conversation._decrypt(packet)
         partial = self._process_element_packet(
             packet=element_packet,
             conversation=conversation,
@@ -620,22 +620,6 @@ class Peer(object):
                 # transmitted
                 conversation.elements[element.id_] = element
             return element
-
-    def _decrypt(self, packet, conversation):
-        """Decrypt a ``RegularPacket`` and return an ``ElementPacket``."""
-        ciphertext = a2b(packet.payload)
-        keys = conversation.keys or conversation.request_keys
-        payload_hash = keyed_hash(keys.payload_hash_key,
-                                  a2b(packet.handshake_key) + ciphertext)
-
-        if payload_hash == a2b(packet.payload_hash):
-            with conversation.axolotl_lock:
-                plaintext = conversation.axolotl.decrypt(ciphertext)
-                if self.has_persistence:
-                    conversation.axolotl.save()
-            return packets.ElementPacket.build(plaintext)
-        else:
-            raise errors.CorruptedPacketError()
 
     @inlineCallbacks
     def _start_server(self, launch_tor):
@@ -1210,6 +1194,22 @@ class Conversation(object):
             b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
             b2a(handshake_key),
             b2a(ciphertext))
+
+    def _decrypt(self, packet):
+        """Decrypt a ``RegularPacket`` and return an ``ElementPacket``."""
+        ciphertext = a2b(packet.payload)
+        keys = self.keys or self.request_keys
+        payload_hash = keyed_hash(keys.payload_hash_key,
+                                  a2b(packet.handshake_key) + ciphertext)
+
+        if payload_hash == a2b(packet.payload_hash):
+            with self.axolotl_lock:
+                plaintext = self.axolotl.decrypt(ciphertext)
+                if self.has_persistence:
+                    self.axolotl.save()
+            return packets.ElementPacket.build(plaintext)
+        else:
+            raise errors.CorruptedPacketError()
 
     def remove_manager(self, manager):
         manager.stop()
