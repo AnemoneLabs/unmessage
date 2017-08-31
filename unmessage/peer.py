@@ -332,7 +332,7 @@ class Peer(object):
                 self.log.info('Sending {status} presence to {contact.name}',
                               status=str(element),
                               contact=conversation.contact)
-                d = self._send_element(conversation, element)
+                d = conversation._send_element(element)
                 deferreds.append(d)
 
         return deferreds
@@ -481,31 +481,6 @@ class Peer(object):
         conversation.axolotl.delete()
         del self._contacts[conversation.contact.name]
         del self._conversations[conversation.contact.name]
-
-    @inlineCallbacks
-    def _send_element(self, conv, element, handshake_key=None):
-        """Create an ``ElementPacket``, connect (if needed) and send it.
-
-        Return a ``Deferred`` that is fired after the the element is sent using
-        the appropriate manager.
-
-        TODO
-            - Size invariance should be handled here, before encryption by
-              ``_send_packet``
-            - Split the element into multiple packets if needed
-            - Maybe use a ``DeferredList``
-        """
-        element.sender = self.name
-        element.receiver = conv.contact.name
-
-        partial = elements.PartialElement.from_element(element)
-
-        manager = yield conv._get_active_manager(element)
-
-        for packet in partial.to_packets():
-            yield conv._send_packet(packet, manager, handshake_key)
-
-        returnValue((partial, conv))
 
     @inlineCallbacks
     def _start_server(self, launch_tor):
@@ -756,9 +731,9 @@ class Peer(object):
         request = self._inbound_requests[identity]
         element, handshake_keys = yield self._prepare_accept_request(request,
                                                                      new_name)
-        yield self._send_element(request.conversation,
-                                 element,
-                                 handshake_key=handshake_keys.pub)
+        yield request.conversation._send_element(
+            element,
+            handshake_key=handshake_keys.pub)
         del self._inbound_requests[identity]
         returnValue(
             Peer._get_conv_established_notification(request.conversation))
@@ -796,8 +771,7 @@ class Peer(object):
                         conversation.remove_manager(untalk_session)
                         raise
                     else:
-                        yield self._send_element(
-                            conversation,
+                        yield conversation._send_element(
                             UntalkElement(
                                 b2a(untalk_session.handshake_keys.pub)))
                         if (untalk_session.state ==
@@ -823,7 +797,7 @@ class Peer(object):
     @inlineCallbacks
     def send_message(self, conversation, plaintext):
         element = self._prepare_message(plaintext)
-        yield self._send_element(conversation, element)
+        yield conversation._send_element(element)
         notification = notifications.ElementNotification(element)
         returnValue(notification)
 
@@ -857,7 +831,7 @@ class Peer(object):
     def authenticate(self, conversation, secret):
         element, auth_session = self._prepare_authentication(conversation,
                                                              secret)
-        yield self._send_element(conversation, element)
+        yield conversation._send_element(element)
         if conversation.auth_session.is_waiting:
             notification = notifications.UnmessageNotification(
                 title='Authentication started',
@@ -1051,6 +1025,31 @@ class Conversation(object):
 
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
+
+    @inlineCallbacks
+    def _send_element(self, element, handshake_key=None):
+        """Create an ``ElementPacket``, connect (if needed) and send it.
+
+        Return a ``Deferred`` that is fired after the the element is sent using
+        the appropriate manager.
+
+        TODO
+            - Size invariance should be handled here, before encryption by
+              ``_send_packet``
+            - Split the element into multiple packets if needed
+            - Maybe use a ``DeferredList``
+        """
+        element.sender = self.peer.name
+        element.receiver = self.contact.name
+
+        partial = elements.PartialElement.from_element(element)
+
+        manager = yield self._get_active_manager(element)
+
+        for packet in partial.to_packets():
+            yield self._send_packet(packet, manager, handshake_key)
+
+        returnValue((partial, self))
 
     @inlineCallbacks
     def _get_active_manager(self, element):
@@ -1429,8 +1428,7 @@ class AuthSession(object):
                         conversation.contact.name)))
         else:
             if next_buffer:
-                yield conversation.peer._send_element(
-                    conversation,
+                yield conversation._send_element(
                     AuthenticationElement(next_buffer))
             if conversation.is_authenticated is None:
                 # the authentication is not complete as buffers are still being
@@ -1586,8 +1584,7 @@ class FileSession(object):
         element, file_transfer = self.prepare_request(file_path)
         self.out_requests[element.checksum] = file_transfer
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             del self.out_requests[element.checksum]
             raise
@@ -1613,8 +1610,7 @@ class FileSession(object):
         del self.out_requests[checksum]
         self.out_files[checksum] = transfer
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             self.out_requests[checksum] = transfer
             raise
@@ -1642,8 +1638,7 @@ class FileSession(object):
         self.in_files[checksum] = transfer
         del self.in_requests[checksum]
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             self.in_requests[checksum] = transfer
             del self.in_files[checksum]
