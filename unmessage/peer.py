@@ -619,9 +619,6 @@ class Peer(object):
                 continue
         return True
 
-    def _prepare_message(self, message):
-        return MessageElement(message)
-
     def _prepare_authentication(self, conversation, secret):
         # TODO maybe use locks or something to prevent advancing or restarting
         # while the SMP is doing its math
@@ -758,7 +755,7 @@ class Peer(object):
 
     @inlineCallbacks
     def send_message(self, conversation, plaintext):
-        element = self._prepare_message(plaintext)
+        element = conversation._prepare_message(plaintext)
         yield conversation._send_element(element)
         notification = notifications.ElementNotification(element)
         returnValue(notification)
@@ -1167,6 +1164,9 @@ class Conversation(object):
             return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
+
+    def _prepare_message(self, message):
+        return MessageElement(message)
 
     def remove_manager(self, manager):
         manager.stop()

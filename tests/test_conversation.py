@@ -123,9 +123,9 @@ def test_send_message(content, peers, callback_side_effect):
 
 @pytest.inlineCallbacks
 def test_prepare_message(message_element, content, peers):
-    peer_a, peer_b, _, _ = yield peers
+    _, _, conv_a, _ = yield peers
 
-    element = peer_a._prepare_message(content)
+    element = conv_a._prepare_message(content)
     assert element == message_element
 
 
