@@ -563,7 +563,7 @@ class Peer(object):
         Wrap the element packet with the regular encrypted packet and return a
         ``Deferred`` after successfully transmitting it.
         """
-        reg_packet = self._encrypt(packet, conversation, handshake_key)
+        reg_packet = conversation._encrypt(packet, handshake_key)
 
         # pack the ``RegularPacket`` into a ``str`` and send it
         yield manager.send_data(str(reg_packet))
@@ -620,35 +620,6 @@ class Peer(object):
                 # transmitted
                 conversation.elements[element.id_] = element
             return element
-
-    def _encrypt(self, packet, conversation, handshake_key=None):
-        """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
-        iv = random(packets.IV_LEN)
-        plaintext = str(packet)
-        if handshake_key:
-            keys = conversation.request_keys
-            handshake_key = pyaxo.encrypt_symmetric(keys.handshake_enc_key,
-                                                    handshake_key)
-        else:
-            keys = conversation.keys
-            handshake_key = ''
-
-        with conversation.axolotl_lock:
-            ciphertext = conversation.axolotl.encrypt(plaintext)
-            if self.has_persistence:
-                conversation.axolotl.save()
-
-        if handshake_key:
-            packet_type = packets.ReplyPacket
-        else:
-            packet_type = packets.RegularPacket
-
-        return packet_type(
-            b2a(iv),
-            b2a(pyaxo.hash_(iv + conversation.contact.key + keys.iv_hash_key)),
-            b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
-            b2a(handshake_key),
-            b2a(ciphertext))
 
     def _decrypt(self, packet, conversation):
         """Decrypt a ``RegularPacket`` and return an ``ElementPacket``."""
@@ -1210,6 +1181,35 @@ class Conversation(object):
 
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
+
+    def _encrypt(self, packet, handshake_key=None):
+        """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
+        iv = random(packets.IV_LEN)
+        plaintext = str(packet)
+        if handshake_key:
+            keys = self.request_keys
+            handshake_key = pyaxo.encrypt_symmetric(keys.handshake_enc_key,
+                                                    handshake_key)
+        else:
+            keys = self.keys
+            handshake_key = ''
+
+        with self.axolotl_lock:
+            ciphertext = self.axolotl.encrypt(plaintext)
+            if self.has_persistence:
+                self.axolotl.save()
+
+        if handshake_key:
+            packet_type = packets.ReplyPacket
+        else:
+            packet_type = packets.RegularPacket
+
+        return packet_type(
+            b2a(iv),
+            b2a(pyaxo.hash_(iv + self.contact.key + keys.iv_hash_key)),
+            b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
+            b2a(handshake_key),
+            b2a(ciphertext))
 
     def remove_manager(self, manager):
         manager.stop()
