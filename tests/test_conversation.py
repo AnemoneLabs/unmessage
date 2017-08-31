@@ -111,12 +111,12 @@ def test_prepare_presence(status, peers):
 
 @pytest.inlineCallbacks
 def test_send_message(content, peers, callback_side_effect):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+    _, _, conv_a, conv_b = yield peers
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
 
-    yield peer_a.send_message(conv_a, content)
+    yield conv_a.send_message(content)
     received_message = yield d
     assert str(received_message) == content
 

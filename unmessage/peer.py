@@ -754,13 +754,6 @@ class Peer(object):
         return untalk.get_audio_devices()
 
     @inlineCallbacks
-    def send_message(self, conversation, plaintext):
-        element = conversation._prepare_message(plaintext)
-        yield conversation._send_element(element)
-        notification = notifications.ElementNotification(element)
-        returnValue(notification)
-
-    @inlineCallbacks
     def send_file(self, conversation, file_path):
         if conversation.is_active:
             file_session = (conversation.file_session or
@@ -1308,6 +1301,13 @@ class Conversation(object):
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
         return self.auth_session
+
+    @inlineCallbacks
+    def send_message(self, plaintext):
+        element = self._prepare_message(plaintext)
+        yield self._send_element(element)
+        notification = notifications.ElementNotification(element)
+        returnValue(notification)
 
     @inlineCallbacks
     def untalk(self, input_device=None, output_device=None):

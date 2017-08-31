@@ -414,7 +414,7 @@ class Cli(PeerUi):
         if len(message):
             conv = self.peer.get_conversation(name)
             self.active_conv = conv
-            yield self.peer.send_message(conv, message)
+            yield conv.send_message(message)
             handler = self._handlers_conv[name]
             handler.display_message(message, is_receiving=False)
 

@@ -432,7 +432,7 @@ class ChatTab(Tk.Frame, ConversationUi, object):
     def send_message(self, message):
         if len(message):
             self.text_message.delete(1.0, Tk.END)
-            yield self.peer.send_message(self.conversation, message)
+            yield self.conversation.send_message(message)
             self.display_message(message, self.peer.name)
 
     def set_presence(self, enable):
