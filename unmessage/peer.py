@@ -563,9 +563,8 @@ class Peer(object):
         element.
         """
         element_packet = conversation._decrypt(packet)
-        partial = self._process_element_packet(
+        partial = conversation._process_element_packet(
             packet=element_packet,
-            conversation=conversation,
             sender=conversation.contact.name,
             receiver=self.name)
         if partial.is_complete:
@@ -576,36 +575,6 @@ class Peer(object):
         else:
             # the ``PartialElement`` has parts yet to be received
             pass
-
-    def _process_element_packet(self, packet, conversation, sender, receiver):
-        with conversation.elements_lock:
-            try:
-                # get the ``PartialElement`` that corresponds to the
-                # ``ElementPacket.id_`` in case it is one of the parts of an
-                # incomplete element
-                element = conversation.elements.pop(packet.id_)
-            except KeyError:
-                # create an ``PartialElement`` as there are no incomplete
-                # elements with the respective ``ElementPacket.id_``
-                element = elements.PartialElement.from_packet(packet,
-                                                              sender,
-                                                              receiver)
-            else:
-                # add the part from the packet
-                element[packet.part_num] = packet.payload
-
-            if element.is_complete:
-                # the ``PartialElement`` does not have to be stored as either
-                # it fitted in a single packet or all of its parts have been
-                # transmitted (the ``packet`` contained the last remaining
-                # part)
-                pass
-            else:
-                # store the ``PartialElement`` in the incomplete elements
-                # ``dict`` as it has been split in multiple parts, yet to be
-                # transmitted
-                conversation.elements[element.id_] = element
-            return element
 
     @inlineCallbacks
     def _start_server(self, launch_tor):
@@ -1165,6 +1134,36 @@ class Conversation(object):
         yield manager.send_data(str(reg_packet))
 
         returnValue(reg_packet)
+
+    def _process_element_packet(self, packet, sender, receiver):
+        with self.elements_lock:
+            try:
+                # get the ``PartialElement`` that corresponds to the
+                # ``ElementPacket.id_`` in case it is one of the parts of an
+                # incomplete element
+                element = self.elements.pop(packet.id_)
+            except KeyError:
+                # create an ``PartialElement`` as there are no incomplete
+                # elements with the respective ``ElementPacket.id_``
+                element = elements.PartialElement.from_packet(packet,
+                                                              sender,
+                                                              receiver)
+            else:
+                # add the part from the packet
+                element[packet.part_num] = packet.payload
+
+            if element.is_complete:
+                # the ``PartialElement`` does not have to be stored as either
+                # it fitted in a single packet or all of its parts have been
+                # transmitted (the ``packet`` contained the last remaining
+                # part)
+                pass
+            else:
+                # store the ``PartialElement`` in the incomplete elements
+                # ``dict`` as it has been split in multiple parts, yet to be
+                # transmitted
+                self.elements[element.id_] = element
+            return element
 
     def _encrypt(self, packet, handshake_key=None):
         """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
