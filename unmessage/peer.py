@@ -503,7 +503,7 @@ class Peer(object):
         manager = yield self._get_active_manager(element, conv)
 
         for packet in partial.to_packets():
-            yield self._send_packet(packet, manager, conv, handshake_key)
+            yield conv._send_packet(packet, manager, handshake_key)
 
         returnValue((partial, conv))
 
@@ -555,20 +555,6 @@ class Peer(object):
                                                           manager_class.type_)
 
         returnValue(manager)
-
-    @inlineCallbacks
-    def _send_packet(self, packet, manager, conversation, handshake_key=None):
-        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
-
-        Wrap the element packet with the regular encrypted packet and return a
-        ``Deferred`` after successfully transmitting it.
-        """
-        reg_packet = conversation._encrypt(packet, handshake_key)
-
-        # pack the ``RegularPacket`` into a ``str`` and send it
-        yield manager.send_data(str(reg_packet))
-
-        returnValue(reg_packet)
 
     def _receive_packet(self, packet, connection, conversation):
         """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
@@ -1165,6 +1151,20 @@ class Conversation(object):
 
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
+
+    @inlineCallbacks
+    def _send_packet(self, packet, manager, handshake_key=None):
+        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
+
+        Wrap the element packet with the regular encrypted packet and return a
+        ``Deferred`` after successfully transmitting it.
+        """
+        reg_packet = self._encrypt(packet, handshake_key)
+
+        # pack the ``RegularPacket`` into a ``str`` and send it
+        yield manager.send_data(str(reg_packet))
+
+        returnValue(reg_packet)
 
     def _encrypt(self, packet, handshake_key=None):
         """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
