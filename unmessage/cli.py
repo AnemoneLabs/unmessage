@@ -421,8 +421,7 @@ class Cli(PeerUi):
     @displays_error
     @inlineCallbacks
     def send_file(self, name, file_path):
-        transfer = yield self.peer.send_file(
-            self.peer.get_conversation(name), file_path)
+        transfer = yield self.peer.get_conversation(name).send_file(file_path)
         self.display_info(
             'File request for "{}" sent to {}'.format(
                 transfer.element.content, name))

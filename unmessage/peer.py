@@ -754,17 +754,6 @@ class Peer(object):
         return untalk.get_audio_devices()
 
     @inlineCallbacks
-    def send_file(self, conversation, file_path):
-        if conversation.is_active:
-            file_session = (conversation.file_session or
-                            conversation.init_file())
-            result = yield file_session.send_request(file_path)
-            returnValue(result)
-        else:
-            # TODO automatically connect and send request
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    @inlineCallbacks
     def accept_file(self, conversation, checksum, file_path=None):
         if conversation.is_active:
             result = yield conversation.file_session.accept_request(checksum,
@@ -1344,6 +1333,16 @@ class Conversation(object):
             raise errors.UntalkError(
                 message='You must be connected to {} in order to start a '
                         'conversation'.format(self.contact.name))
+
+    @inlineCallbacks
+    def send_file(self, file_path):
+        if self.is_active:
+            file_session = self.file_session or self.init_file()
+            result = yield file_session.send_request(file_path)
+            returnValue(result)
+        else:
+            # TODO automatically connect and send request
+            raise errors.InactiveManagerError(self.contact.name)
 
 
 @attr.s
