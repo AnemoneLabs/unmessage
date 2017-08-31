@@ -500,61 +500,12 @@ class Peer(object):
 
         partial = elements.PartialElement.from_element(element)
 
-        manager = yield self._get_active_manager(element, conv)
+        manager = yield conv._get_active_manager(element)
 
         for packet in partial.to_packets():
             yield conv._send_packet(packet, manager, handshake_key)
 
         returnValue((partial, conv))
-
-    @inlineCallbacks
-    def _get_active_manager(self, element, conversation):
-        """Get a manager with an active connection to send the element.
-
-        Return a ``Deferred`` that is fired with a conversation manager capable
-        of transmitting the element. In case the conversation does not have an
-        active connection or it is not a regular element, establish a new
-        connection. Otherwise, use the conversation's current active
-        connection.
-        """
-        def connection_failed(failure):
-            if failure.check(txtorcon.socks.HostUnreachableError,
-                             txtorcon.socks.TtlExpiredError):
-                raise Failure(errors.OfflinePeerError(
-                    title=failure.getErrorMessage(),
-                    contact=conversation.contact.name))
-            else:
-                raise Failure(errors.UnmessageError(
-                    title='Conversation connection failed',
-                    message=str(failure)))
-
-        manager = conversation
-
-        if not conversation.is_active:
-            try:
-                # the peer connects to the other one to resume a conversation
-                connection = yield self._connect(conversation.contact.address)
-            except Exception as e:
-                connection_failed(Failure(e))
-            else:
-                conversation.set_active(connection, Conversation.state_conv)
-        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
-            manager_class = get_manager_class(element)
-            manager = conversation._get_manager(manager_class.type_)
-
-            if not manager.connection:
-                try:
-                    # the peer makes another connection to the other one to
-                    # send this "special" element
-                    connection = yield self._connect(
-                        conversation.contact.address)
-                except Exception as e:
-                    connection_failed(Failure(e))
-                else:
-                    manager = conversation.add_connection(connection,
-                                                          manager_class.type_)
-
-        returnValue(manager)
 
     @inlineCallbacks
     def _start_server(self, launch_tor):
@@ -1100,6 +1051,54 @@ class Conversation(object):
 
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
+
+    @inlineCallbacks
+    def _get_active_manager(self, element):
+        """Get a manager with an active connection to send the element.
+
+        Return a ``Deferred`` that is fired with a conversation manager capable
+        of transmitting the element. In case the conversation does not have an
+        active connection or it is not a regular element, establish a new
+        connection. Otherwise, use the conversation's current active
+        connection.
+        """
+        def connection_failed(failure):
+            if failure.check(txtorcon.socks.HostUnreachableError,
+                             txtorcon.socks.TtlExpiredError):
+                raise Failure(errors.OfflinePeerError(
+                    title=failure.getErrorMessage(),
+                    contact=self.contact.name))
+            else:
+                raise Failure(errors.UnmessageError(
+                    title='Conversation connection failed',
+                    message=str(failure)))
+
+        manager = self
+
+        if not self.is_active:
+            try:
+                # the peer connects to the other one to resume a conversation
+                connection = yield self.peer._connect(self.contact.address)
+            except Exception as e:
+                connection_failed(Failure(e))
+            else:
+                self.set_active(connection, Conversation.state_conv)
+        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager_class = get_manager_class(element)
+            manager = self._get_manager(manager_class.type_)
+
+            if not manager.connection:
+                try:
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
+                    connection = yield self.peer._connect(self.contact.address)
+                except Exception as e:
+                    connection_failed(Failure(e))
+                else:
+                    manager = self.add_connection(connection,
+                                                  manager_class.type_)
+
+        returnValue(manager)
 
     @inlineCallbacks
     def _send_packet(self, packet, manager, handshake_key=None):
