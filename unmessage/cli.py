@@ -429,8 +429,8 @@ class Cli(PeerUi):
     @displays_error
     @inlineCallbacks
     def accept_file(self, name, checksum, file_path=None):
-        transfer = yield self.peer.accept_file(
-            self.peer.get_conversation(name), checksum, file_path)
+        transfer = yield self.peer.get_conversation(name).accept_file(
+            checksum, file_path)
         self.display_info(
             'Accepted receiving "{}" from {}'.format(
                 transfer.element.content, name))
