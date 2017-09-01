@@ -161,11 +161,11 @@ def test_authenticate(secrets, peers, callback_side_effect):
 
 @pytest.inlineCallbacks
 def test_prepare_authentication(peers):
-    peer_a, peer_b, conv_a, _ = yield peers
+    _, _, conv_a, _ = yield peers
 
     secret = 'secret'
     conv_a.init_auth()
-    element, _ = peer_a._prepare_authentication(conv_a, secret)
+    element, _ = conv_a._prepare_authentication(secret)
     assert isinstance(element, elements.AuthenticationElement)
 
 

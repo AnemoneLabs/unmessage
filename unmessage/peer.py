@@ -619,18 +619,6 @@ class Peer(object):
                 continue
         return True
 
-    def _prepare_authentication(self, conversation, secret):
-        # TODO maybe use locks or something to prevent advancing or restarting
-        # while the SMP is doing its math
-        auth_session = conversation.auth_session
-        if (not auth_session or auth_session.is_waiting or
-                auth_session.is_authenticated is not None):
-            auth_session = conversation.init_auth()
-        element = AuthenticationElement(
-            conversation.auth_session.start(
-                conversation.keys.auth_secret_key + secret))
-        return element, auth_session
-
     def get_contact(self, name):
         return self.get_conversation(name).contact
 
@@ -755,8 +743,7 @@ class Peer(object):
 
     @inlineCallbacks
     def authenticate(self, conversation, secret):
-        element, auth_session = self._prepare_authentication(conversation,
-                                                             secret)
+        element, auth_session = conversation._prepare_authentication(secret)
         yield conversation._send_element(element)
         if conversation.auth_session.is_waiting:
             notification = notifications.UnmessageNotification(
@@ -1134,6 +1121,18 @@ class Conversation(object):
 
     def _prepare_message(self, message):
         return MessageElement(message)
+
+    def _prepare_authentication(self, secret):
+        # TODO maybe use locks or something to prevent advancing or restarting
+        # while the SMP is doing its math
+        auth_session = self.auth_session
+        if (not auth_session or auth_session.is_waiting or
+                auth_session.is_authenticated is not None):
+            auth_session = self.init_auth()
+        element = AuthenticationElement(
+            self.auth_session.start(
+                self.keys.auth_secret_key + secret))
+        return element, auth_session
 
     def remove_manager(self, manager):
         manager.stop()
