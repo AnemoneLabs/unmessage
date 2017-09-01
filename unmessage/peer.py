@@ -468,14 +468,6 @@ class Peer(object):
         self._contacts[conv.contact.name] = conv.contact
         self._conversations[conv.contact.name] = conv
 
-    @classmethod
-    def _get_conv_established_notification(cls, conversation):
-        return notifications.ConversationNotification(
-            conversation,
-            title='Conversation established',
-            message='You can now chat with '
-                    '{}'.format(conversation.contact.name))
-
     def _delete_conversation(self, conversation):
         conversation.close()
         conversation.axolotl.delete()
@@ -720,8 +712,7 @@ class Peer(object):
             element,
             handshake_key=handshake_keys.pub)
         del self._inbound_requests[identity]
-        returnValue(
-            Peer._get_conv_established_notification(request.conversation))
+        returnValue(request.conversation._get_established_notification())
 
     def delete_conversation(self, name):
         self._delete_conversation(self.get_conversation(name))
@@ -927,6 +918,12 @@ class Conversation(object):
 
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
+
+    def _get_established_notification(self):
+        return notifications.ConversationNotification(
+            conversation=self,
+            title='Conversation established',
+            message='You can now chat with {}'.format(self.contact.name))
 
     @inlineCallbacks
     def _send_element(self, element, handshake_key=None):
@@ -1195,7 +1192,7 @@ class Conversation(object):
                                  other_handshake_key=handshake_key,
                                  ratchet_keys=req.ratchet_keys)
             self.peer._ui.notify_conv_established(
-                Peer._get_conv_established_notification(req.conversation))
+                req.conversation._get_established_notification())
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
