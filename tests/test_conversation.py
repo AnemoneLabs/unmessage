@@ -137,7 +137,7 @@ SECRETS = {'same': ('secret', 'secret'),
 @pytest.inlineCallbacks
 @pytest.mark.parametrize('secrets', SECRETS.values(), ids=SECRETS.keys())
 def test_authenticate(secrets, peers, callback_side_effect):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+    _, _, conv_a, conv_b = yield peers
 
     d_receive_b = Deferred()
     conv_b.ui.notify_in_authentication = callback_side_effect(d_receive_b)
@@ -147,9 +147,9 @@ def test_authenticate(secrets, peers, callback_side_effect):
     conv_b.ui.notify_finished_authentication = callback_side_effect(d_finish_b)
 
     secret_a, secret_b = secrets
-    yield peer_a.authenticate(conv_a, secret_a)
+    yield conv_a.authenticate(secret_a)
     yield d_receive_b
-    yield peer_b.authenticate(conv_b, secret_b)
+    yield conv_b.authenticate(secret_b)
     yield d_finish_b
     yield d_finish_a
 

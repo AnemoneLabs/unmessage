@@ -741,17 +741,6 @@ class Peer(object):
     def get_audio_devices(self):
         return untalk.get_audio_devices()
 
-    @inlineCallbacks
-    def authenticate(self, conversation, secret):
-        element, auth_session = conversation._prepare_authentication(secret)
-        yield conversation._send_element(element)
-        if conversation.auth_session.is_waiting:
-            notification = notifications.UnmessageNotification(
-                title='Authentication started',
-                message='Waiting for {} to advance'.format(
-                    conversation.contact.name))
-            returnValue(notification)
-
 
 @attr.s
 class Introduction(object):
@@ -1281,6 +1270,16 @@ class Conversation(object):
         yield self._send_element(element)
         notification = notifications.ElementNotification(element)
         returnValue(notification)
+
+    @inlineCallbacks
+    def authenticate(self, secret):
+        element, auth_session = self._prepare_authentication(secret)
+        yield self._send_element(element)
+        if self.auth_session.is_waiting:
+            notification = notifications.UnmessageNotification(
+                title='Authentication started',
+                message='Waiting for {} to advance'.format(self.contact.name))
+            returnValue(notification)
 
     @inlineCallbacks
     def untalk(self, input_device=None, output_device=None):

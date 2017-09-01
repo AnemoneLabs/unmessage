@@ -490,8 +490,7 @@ class Cli(PeerUi):
     @displays_error
     @displays_result
     def authenticate(self, name, secret):
-        return self.peer.authenticate(self.peer.get_conversation(name),
-                                      secret=secret)
+        return self.peer.get_conversation(name).authenticate(secret)
 
     def notify_bootstrap(self, notification):
         self.display_info(notification.message)

@@ -468,7 +468,7 @@ class ChatTab(Tk.Frame, ConversationUi, object):
                            parent=self,
                            show='*')
         if secret:
-            return self.peer.authenticate(self.conversation, secret)
+            return self.conversation.authenticate(secret)
 
     @threadsafe
     def notify_disconnect(self, notification):
