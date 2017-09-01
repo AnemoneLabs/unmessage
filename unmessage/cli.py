@@ -438,9 +438,7 @@ class Cli(PeerUi):
     @displays_error
     def save_file(self, name, checksum, file_path=None):
         try:
-            self.peer.save_file(self.peer.get_conversation(name),
-                                checksum,
-                                file_path)
+            self.peer.get_conversation(name).save_file(checksum, file_path)
         except Exception as e:
             self.display_attention(title=str(type(e)),
                                    message=e.message,

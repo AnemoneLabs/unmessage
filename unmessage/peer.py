@@ -753,12 +753,6 @@ class Peer(object):
     def get_audio_devices(self):
         return untalk.get_audio_devices()
 
-    def save_file(self, conversation, checksum, file_path=None):
-        if conversation.is_active:
-            conversation.file_session.save_received_file(checksum, file_path)
-        else:
-            raise errors.InactiveManagerError(conversation.contact.name)
-
     @inlineCallbacks
     def authenticate(self, conversation, secret):
         element, auth_session = self._prepare_authentication(conversation,
@@ -1341,6 +1335,12 @@ class Conversation(object):
             result = yield self.file_session.accept_request(checksum,
                                                             file_path)
             returnValue(result)
+        else:
+            raise errors.InactiveManagerError(self.contact.name)
+
+    def save_file(self, checksum, file_path=None):
+        if self.is_active:
+            self.file_session.save_received_file(checksum, file_path)
         else:
             raise errors.InactiveManagerError(self.contact.name)
 
