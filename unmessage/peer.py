@@ -1,6 +1,7 @@
 import ConfigParser
 import hmac
 import os
+from functools import wraps
 from hashlib import sha256
 from threading import Event, Lock
 
@@ -816,6 +817,16 @@ class Introduction(object):
         self.peer._ui.notify(notification)
 
 
+def raise_inactive(f):
+    @wraps(f)
+    def wrapped_f(self, *args, **kwargs):
+        if self.is_active:
+            return f(self, *args, **kwargs)
+        else:
+            raise errors.InactiveManagerError(self.contact.name)
+    return wrapped_f
+
+
 @attr.s
 class Conversation(object):
     state_in_req = 'in_req'
@@ -1278,66 +1289,53 @@ class Conversation(object):
                 message='Waiting for {} to advance'.format(self.contact.name))
             returnValue(notification)
 
+    @raise_inactive
     @inlineCallbacks
     def untalk(self, input_device=None, output_device=None):
-        if self.is_active:
-            if self.peer._can_talk(self):
-                untalk_session = self.untalk_session or self.init_untalk()
-                if untalk_session.is_talking:
-                    self.stop_untalk()
-                else:
-                    try:
-                        untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError:
-                        self.remove_manager(untalk_session)
-                        raise
-                    else:
-                        yield self._send_element(
-                            UntalkElement(
-                                b2a(untalk_session.handshake_keys.pub)))
-                        if (untalk_session.state ==
-                                untalk.UntalkSession.state_sent):
-                            notification = notifications.UntalkNotification(
-                                message='Voice conversation request sent '
-                                        'to {}'.format(self.contact.name))
-                            returnValue(notification)
-                        else:
-                            # this peer has accepted the request
-                            self.start_untalk()
+        if self.peer._can_talk(self):
+            untalk_session = self.untalk_session or self.init_untalk()
+            if untalk_session.is_talking:
+                self.stop_untalk()
             else:
-                raise errors.UntalkError(
-                    message='You can only make one voice conversation at a '
-                            'time')
+                try:
+                    untalk_session.configure(input_device, output_device)
+                except untalk.AudioDeviceNotFoundError:
+                    self.remove_manager(untalk_session)
+                    raise
+                else:
+                    yield self._send_element(
+                        UntalkElement(
+                            b2a(untalk_session.handshake_keys.pub)))
+                    if (untalk_session.state ==
+                            untalk.UntalkSession.state_sent):
+                        notification = notifications.UntalkNotification(
+                            message='Voice conversation request sent '
+                                    'to {}'.format(self.contact.name))
+                        returnValue(notification)
+                    else:
+                        # this peer has accepted the request
+                        self.start_untalk()
         else:
-            # TODO automatically connect and send request
             raise errors.UntalkError(
-                message='You must be connected to {} in order to start a '
-                        'conversation'.format(self.contact.name))
+                message='You can only make one voice conversation at a '
+                        'time')
 
+    @raise_inactive
     @inlineCallbacks
     def send_file(self, file_path):
-        if self.is_active:
-            file_session = self.file_session or self.init_file()
-            result = yield file_session.send_request(file_path)
-            returnValue(result)
-        else:
-            # TODO automatically connect and send request
-            raise errors.InactiveManagerError(self.contact.name)
+        file_session = self.file_session or self.init_file()
+        result = yield file_session.send_request(file_path)
+        returnValue(result)
 
+    @raise_inactive
     @inlineCallbacks
     def accept_file(self, checksum, file_path=None):
-        if self.is_active:
-            result = yield self.file_session.accept_request(checksum,
-                                                            file_path)
-            returnValue(result)
-        else:
-            raise errors.InactiveManagerError(self.contact.name)
+        result = yield self.file_session.accept_request(checksum, file_path)
+        returnValue(result)
 
+    @raise_inactive
     def save_file(self, checksum, file_path=None):
-        if self.is_active:
-            self.file_session.save_received_file(checksum, file_path)
-        else:
-            raise errors.InactiveManagerError(self.contact.name)
+        self.file_session.save_received_file(checksum, file_path)
 
 
 @attr.s
