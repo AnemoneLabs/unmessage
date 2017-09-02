@@ -332,7 +332,7 @@ class Peer(object):
                 self.log.info('Sending {status} presence to {contact.name}',
                               status=str(element),
                               contact=conversation.contact)
-                d = self._send_element(conversation, element)
+                d = conversation._send_element(element)
                 deferreds.append(d)
 
         return deferreds
@@ -468,203 +468,11 @@ class Peer(object):
         self._contacts[conv.contact.name] = conv.contact
         self._conversations[conv.contact.name] = conv
 
-    @classmethod
-    def _get_conv_established_notification(cls, conversation):
-        return notifications.ConversationNotification(
-            conversation,
-            title='Conversation established',
-            message='You can now chat with '
-                    '{}'.format(conversation.contact.name))
-
     def _delete_conversation(self, conversation):
         conversation.close()
         conversation.axolotl.delete()
         del self._contacts[conversation.contact.name]
         del self._conversations[conversation.contact.name]
-
-    @inlineCallbacks
-    def _send_element(self, conv, element, handshake_key=None):
-        """Create an ``ElementPacket``, connect (if needed) and send it.
-
-        Return a ``Deferred`` that is fired after the the element is sent using
-        the appropriate manager.
-
-        TODO
-            - Size invariance should be handled here, before encryption by
-              ``_send_packet``
-            - Split the element into multiple packets if needed
-            - Maybe use a ``DeferredList``
-        """
-        element.sender = self.name
-        element.receiver = conv.contact.name
-
-        partial = elements.PartialElement.from_element(element)
-
-        manager = yield self._get_active_manager(element, conv)
-
-        for packet in partial.to_packets():
-            yield self._send_packet(packet, manager, conv, handshake_key)
-
-        returnValue((partial, conv))
-
-    @inlineCallbacks
-    def _get_active_manager(self, element, conversation):
-        """Get a manager with an active connection to send the element.
-
-        Return a ``Deferred`` that is fired with a conversation manager capable
-        of transmitting the element. In case the conversation does not have an
-        active connection or it is not a regular element, establish a new
-        connection. Otherwise, use the conversation's current active
-        connection.
-        """
-        def connection_failed(failure):
-            if failure.check(txtorcon.socks.HostUnreachableError,
-                             txtorcon.socks.TtlExpiredError):
-                raise Failure(errors.OfflinePeerError(
-                    title=failure.getErrorMessage(),
-                    contact=conversation.contact.name))
-            else:
-                raise Failure(errors.UnmessageError(
-                    title='Conversation connection failed',
-                    message=str(failure)))
-
-        manager = conversation
-
-        if not conversation.is_active:
-            try:
-                # the peer connects to the other one to resume a conversation
-                connection = yield self._connect(conversation.contact.address)
-            except Exception as e:
-                connection_failed(Failure(e))
-            else:
-                conversation.set_active(connection, Conversation.state_conv)
-        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
-            manager_class = get_manager_class(element)
-            manager = conversation._get_manager(manager_class.type_)
-
-            if not manager.connection:
-                try:
-                    # the peer makes another connection to the other one to
-                    # send this "special" element
-                    connection = yield self._connect(
-                        conversation.contact.address)
-                except Exception as e:
-                    connection_failed(Failure(e))
-                else:
-                    manager = conversation.add_connection(connection,
-                                                          manager_class.type_)
-
-        returnValue(manager)
-
-    @inlineCallbacks
-    def _send_packet(self, packet, manager, conversation, handshake_key=None):
-        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
-
-        Wrap the element packet with the regular encrypted packet and return a
-        ``Deferred`` after successfully transmitting it.
-        """
-        reg_packet = self._encrypt(packet, conversation, handshake_key)
-
-        # pack the ``RegularPacket`` into a ``str`` and send it
-        yield manager.send_data(str(reg_packet))
-
-        returnValue(reg_packet)
-
-    def _receive_packet(self, packet, connection, conversation):
-        """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
-
-        Unwrap the element packet with decryption, process it and parse the
-        element.
-        """
-        element_packet = self._decrypt(packet, conversation)
-        partial = self._process_element_packet(
-            packet=element_packet,
-            conversation=conversation,
-            sender=conversation.contact.name,
-            receiver=self.name)
-        if partial.is_complete:
-            # it can be parsed as all parts have been added to the
-            # ``PartialElement`` or it is composed of a single part
-            return conversation._receive_element(partial.to_element(),
-                                                 connection)
-        else:
-            # the ``PartialElement`` has parts yet to be received
-            pass
-
-    def _process_element_packet(self, packet, conversation, sender, receiver):
-        with conversation.elements_lock:
-            try:
-                # get the ``PartialElement`` that corresponds to the
-                # ``ElementPacket.id_`` in case it is one of the parts of an
-                # incomplete element
-                element = conversation.elements.pop(packet.id_)
-            except KeyError:
-                # create an ``PartialElement`` as there are no incomplete
-                # elements with the respective ``ElementPacket.id_``
-                element = elements.PartialElement.from_packet(packet,
-                                                              sender,
-                                                              receiver)
-            else:
-                # add the part from the packet
-                element[packet.part_num] = packet.payload
-
-            if element.is_complete:
-                # the ``PartialElement`` does not have to be stored as either
-                # it fitted in a single packet or all of its parts have been
-                # transmitted (the ``packet`` contained the last remaining
-                # part)
-                pass
-            else:
-                # store the ``PartialElement`` in the incomplete elements
-                # ``dict`` as it has been split in multiple parts, yet to be
-                # transmitted
-                conversation.elements[element.id_] = element
-            return element
-
-    def _encrypt(self, packet, conversation, handshake_key=None):
-        """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
-        iv = random(packets.IV_LEN)
-        plaintext = str(packet)
-        if handshake_key:
-            keys = conversation.request_keys
-            handshake_key = pyaxo.encrypt_symmetric(keys.handshake_enc_key,
-                                                    handshake_key)
-        else:
-            keys = conversation.keys
-            handshake_key = ''
-
-        with conversation.axolotl_lock:
-            ciphertext = conversation.axolotl.encrypt(plaintext)
-            if self.has_persistence:
-                conversation.axolotl.save()
-
-        if handshake_key:
-            packet_type = packets.ReplyPacket
-        else:
-            packet_type = packets.RegularPacket
-
-        return packet_type(
-            b2a(iv),
-            b2a(pyaxo.hash_(iv + conversation.contact.key + keys.iv_hash_key)),
-            b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
-            b2a(handshake_key),
-            b2a(ciphertext))
-
-    def _decrypt(self, packet, conversation):
-        """Decrypt a ``RegularPacket`` and return an ``ElementPacket``."""
-        ciphertext = a2b(packet.payload)
-        keys = conversation.keys or conversation.request_keys
-        payload_hash = keyed_hash(keys.payload_hash_key,
-                                  a2b(packet.handshake_key) + ciphertext)
-
-        if payload_hash == a2b(packet.payload_hash):
-            with conversation.axolotl_lock:
-                plaintext = conversation.axolotl.decrypt(ciphertext)
-                if self.has_persistence:
-                    conversation.axolotl.save()
-            return packets.ElementPacket.build(plaintext)
-        else:
-            raise errors.CorruptedPacketError()
 
     @inlineCallbacks
     def _start_server(self, launch_tor):
@@ -803,21 +611,6 @@ class Peer(object):
                 continue
         return True
 
-    def _prepare_message(self, message):
-        return MessageElement(message)
-
-    def _prepare_authentication(self, conversation, secret):
-        # TODO maybe use locks or something to prevent advancing or restarting
-        # while the SMP is doing its math
-        auth_session = conversation.auth_session
-        if (not auth_session or auth_session.is_waiting or
-                auth_session.is_authenticated is not None):
-            auth_session = conversation.init_auth()
-        element = AuthenticationElement(
-            conversation.auth_session.start(
-                conversation.keys.auth_secret_key + secret))
-        return element, auth_session
-
     def get_contact(self, name):
         return self.get_conversation(name).contact
 
@@ -915,12 +708,11 @@ class Peer(object):
         request = self._inbound_requests[identity]
         element, handshake_keys = yield self._prepare_accept_request(request,
                                                                      new_name)
-        yield self._send_element(request.conversation,
-                                 element,
-                                 handshake_key=handshake_keys.pub)
+        yield request.conversation._send_element(
+            element,
+            handshake_key=handshake_keys.pub)
         del self._inbound_requests[identity]
-        returnValue(
-            Peer._get_conv_established_notification(request.conversation))
+        returnValue(request.conversation._get_established_notification())
 
     def delete_conversation(self, name):
         self._delete_conversation(self.get_conversation(name))
@@ -939,90 +731,6 @@ class Peer(object):
 
     def get_audio_devices(self):
         return untalk.get_audio_devices()
-
-    @inlineCallbacks
-    def untalk(self, conversation, input_device=None, output_device=None):
-        if conversation.is_active:
-            if self._can_talk(conversation):
-                untalk_session = (conversation.untalk_session or
-                                  conversation.init_untalk())
-                if untalk_session.is_talking:
-                    conversation.stop_untalk()
-                else:
-                    try:
-                        untalk_session.configure(input_device, output_device)
-                    except untalk.AudioDeviceNotFoundError:
-                        conversation.remove_manager(untalk_session)
-                        raise
-                    else:
-                        yield self._send_element(
-                            conversation,
-                            UntalkElement(
-                                b2a(untalk_session.handshake_keys.pub)))
-                        if (untalk_session.state ==
-                                untalk.UntalkSession.state_sent):
-                            notification = notifications.UntalkNotification(
-                                message='Voice conversation request sent '
-                                        'to {}'.format(
-                                            conversation.contact.name))
-                            returnValue(notification)
-                        else:
-                            # this peer has accepted the request
-                            conversation.start_untalk()
-            else:
-                raise errors.UntalkError(
-                    message='You can only make one voice conversation at a '
-                            'time')
-        else:
-            # TODO automatically connect and send request
-            raise errors.UntalkError(
-                message='You must be connected to {} in order to start a '
-                        'conversation'.format(conversation.contact.name))
-
-    @inlineCallbacks
-    def send_message(self, conversation, plaintext):
-        element = self._prepare_message(plaintext)
-        yield self._send_element(conversation, element)
-        notification = notifications.ElementNotification(element)
-        returnValue(notification)
-
-    @inlineCallbacks
-    def send_file(self, conversation, file_path):
-        if conversation.is_active:
-            file_session = (conversation.file_session or
-                            conversation.init_file())
-            result = yield file_session.send_request(file_path)
-            returnValue(result)
-        else:
-            # TODO automatically connect and send request
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    @inlineCallbacks
-    def accept_file(self, conversation, checksum, file_path=None):
-        if conversation.is_active:
-            result = yield conversation.file_session.accept_request(checksum,
-                                                                    file_path)
-            returnValue(result)
-        else:
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    def save_file(self, conversation, checksum, file_path=None):
-        if conversation.is_active:
-            conversation.file_session.save_received_file(checksum, file_path)
-        else:
-            raise errors.InactiveManagerError(conversation.contact.name)
-
-    @inlineCallbacks
-    def authenticate(self, conversation, secret):
-        element, auth_session = self._prepare_authentication(conversation,
-                                                             secret)
-        yield self._send_element(conversation, element)
-        if conversation.auth_session.is_waiting:
-            notification = notifications.UnmessageNotification(
-                title='Authentication started',
-                message='Waiting for {} to advance'.format(
-                    conversation.contact.name))
-            returnValue(notification)
 
 
 @attr.s
@@ -1211,6 +919,207 @@ class Conversation(object):
     def _set_manager(self, manager, type_):
         self._managers[type_] = manager
 
+    def _get_established_notification(self):
+        return notifications.ConversationNotification(
+            conversation=self,
+            title='Conversation established',
+            message='You can now chat with {}'.format(self.contact.name))
+
+    @inlineCallbacks
+    def _send_element(self, element, handshake_key=None):
+        """Create an ``ElementPacket``, connect (if needed) and send it.
+
+        Return a ``Deferred`` that is fired after the the element is sent using
+        the appropriate manager.
+
+        TODO
+            - Size invariance should be handled here, before encryption by
+              ``_send_packet``
+            - Split the element into multiple packets if needed
+            - Maybe use a ``DeferredList``
+        """
+        element.sender = self.peer.name
+        element.receiver = self.contact.name
+
+        partial = elements.PartialElement.from_element(element)
+
+        manager = yield self._get_active_manager(element)
+
+        for packet in partial.to_packets():
+            yield self._send_packet(packet, manager, handshake_key)
+
+        returnValue((partial, self))
+
+    @inlineCallbacks
+    def _get_active_manager(self, element):
+        """Get a manager with an active connection to send the element.
+
+        Return a ``Deferred`` that is fired with a conversation manager capable
+        of transmitting the element. In case the conversation does not have an
+        active connection or it is not a regular element, establish a new
+        connection. Otherwise, use the conversation's current active
+        connection.
+        """
+        def connection_failed(failure):
+            if failure.check(txtorcon.socks.HostUnreachableError,
+                             txtorcon.socks.TtlExpiredError):
+                raise Failure(errors.OfflinePeerError(
+                    title=failure.getErrorMessage(),
+                    contact=self.contact.name))
+            else:
+                raise Failure(errors.UnmessageError(
+                    title='Conversation connection failed',
+                    message=str(failure)))
+
+        manager = self
+
+        if not self.is_active:
+            try:
+                # the peer connects to the other one to resume a conversation
+                connection = yield self.peer._connect(self.contact.address)
+            except Exception as e:
+                connection_failed(Failure(e))
+            else:
+                self.set_active(connection, Conversation.state_conv)
+        elif element.type_ not in elements.REGULAR_ELEMENT_TYPES:
+            manager_class = get_manager_class(element)
+            manager = self._get_manager(manager_class.type_)
+
+            if not manager.connection:
+                try:
+                    # the peer makes another connection to the other one to
+                    # send this "special" element
+                    connection = yield self.peer._connect(self.contact.address)
+                except Exception as e:
+                    connection_failed(Failure(e))
+                else:
+                    manager = self.add_connection(connection,
+                                                  manager_class.type_)
+
+        returnValue(manager)
+
+    @inlineCallbacks
+    def _send_packet(self, packet, manager, handshake_key=None):
+        """Encrypt an ``ElementPacket`` as a ``RegularPacket`` and send it.
+
+        Wrap the element packet with the regular encrypted packet and return a
+        ``Deferred`` after successfully transmitting it.
+        """
+        reg_packet = self._encrypt(packet, handshake_key)
+
+        # pack the ``RegularPacket`` into a ``str`` and send it
+        yield manager.send_data(str(reg_packet))
+
+        returnValue(reg_packet)
+
+    def _receive_packet(self, packet, connection):
+        """Decrypt a ``RegularPacket`` as an ``ElementPacket``.
+
+        Unwrap the element packet with decryption, process it and parse the
+        element.
+        """
+        element_packet = self._decrypt(packet)
+        partial = self._process_element_packet(packet=element_packet,
+                                               sender=self.contact.name,
+                                               receiver=self.peer.name)
+        if partial.is_complete:
+            # it can be parsed as all parts have been added to the
+            # ``PartialElement`` or it is composed of a single part
+            return self._receive_element(partial.to_element(), connection)
+        else:
+            # the ``PartialElement`` has parts yet to be received
+            pass
+
+    def _process_element_packet(self, packet, sender, receiver):
+        with self.elements_lock:
+            try:
+                # get the ``PartialElement`` that corresponds to the
+                # ``ElementPacket.id_`` in case it is one of the parts of an
+                # incomplete element
+                element = self.elements.pop(packet.id_)
+            except KeyError:
+                # create an ``PartialElement`` as there are no incomplete
+                # elements with the respective ``ElementPacket.id_``
+                element = elements.PartialElement.from_packet(packet,
+                                                              sender,
+                                                              receiver)
+            else:
+                # add the part from the packet
+                element[packet.part_num] = packet.payload
+
+            if element.is_complete:
+                # the ``PartialElement`` does not have to be stored as either
+                # it fitted in a single packet or all of its parts have been
+                # transmitted (the ``packet`` contained the last remaining
+                # part)
+                pass
+            else:
+                # store the ``PartialElement`` in the incomplete elements
+                # ``dict`` as it has been split in multiple parts, yet to be
+                # transmitted
+                self.elements[element.id_] = element
+            return element
+
+    def _encrypt(self, packet, handshake_key=None):
+        """Encrypt an ``ElementPacket`` and return a ``RegularPacket``."""
+        iv = random(packets.IV_LEN)
+        plaintext = str(packet)
+        if handshake_key:
+            keys = self.request_keys
+            handshake_key = pyaxo.encrypt_symmetric(keys.handshake_enc_key,
+                                                    handshake_key)
+        else:
+            keys = self.keys
+            handshake_key = ''
+
+        with self.axolotl_lock:
+            ciphertext = self.axolotl.encrypt(plaintext)
+            if self.has_persistence:
+                self.axolotl.save()
+
+        if handshake_key:
+            packet_type = packets.ReplyPacket
+        else:
+            packet_type = packets.RegularPacket
+
+        return packet_type(
+            b2a(iv),
+            b2a(pyaxo.hash_(iv + self.contact.key + keys.iv_hash_key)),
+            b2a(keyed_hash(keys.payload_hash_key, handshake_key + ciphertext)),
+            b2a(handshake_key),
+            b2a(ciphertext))
+
+    def _decrypt(self, packet):
+        """Decrypt a ``RegularPacket`` and return an ``ElementPacket``."""
+        ciphertext = a2b(packet.payload)
+        keys = self.keys or self.request_keys
+        payload_hash = keyed_hash(keys.payload_hash_key,
+                                  a2b(packet.handshake_key) + ciphertext)
+
+        if payload_hash == a2b(packet.payload_hash):
+            with self.axolotl_lock:
+                plaintext = self.axolotl.decrypt(ciphertext)
+                if self.has_persistence:
+                    self.axolotl.save()
+            return packets.ElementPacket.build(plaintext)
+        else:
+            raise errors.CorruptedPacketError()
+
+    def _prepare_message(self, message):
+        return MessageElement(message)
+
+    def _prepare_authentication(self, secret):
+        # TODO maybe use locks or something to prevent advancing or restarting
+        # while the SMP is doing its math
+        auth_session = self.auth_session
+        if (not auth_session or auth_session.is_waiting or
+                auth_session.is_authenticated is not None):
+            auth_session = self.init_auth()
+        element = AuthenticationElement(
+            self.auth_session.start(
+                self.keys.auth_secret_key + secret))
+        return element, auth_session
+
     def remove_manager(self, manager):
         manager.stop()
         del self._managers[manager.type_]
@@ -1254,7 +1163,7 @@ class Conversation(object):
 
     def receive_conversation_data(self, data, connection):
         packet = packets.RegularPacket.build(data)
-        return self.peer._receive_packet(packet, connection, self)
+        return self._receive_packet(packet, connection)
 
     def receive_reply_data(self, data, connection):
         packet = packets.ReplyPacket.build(data)
@@ -1283,7 +1192,7 @@ class Conversation(object):
                                  other_handshake_key=handshake_key,
                                  ratchet_keys=req.ratchet_keys)
             self.peer._ui.notify_conv_established(
-                Peer._get_conv_established_notification(req.conversation))
+                req.conversation._get_established_notification())
         else:
             # TODO maybe disconnect instead of ignoring the data
             pass
@@ -1351,6 +1260,84 @@ class Conversation(object):
     def init_auth(self, buffer_=None):
         self.auth_session = AuthSession(buffer_)
         return self.auth_session
+
+    @inlineCallbacks
+    def send_message(self, plaintext):
+        element = self._prepare_message(plaintext)
+        yield self._send_element(element)
+        notification = notifications.ElementNotification(element)
+        returnValue(notification)
+
+    @inlineCallbacks
+    def authenticate(self, secret):
+        element, auth_session = self._prepare_authentication(secret)
+        yield self._send_element(element)
+        if self.auth_session.is_waiting:
+            notification = notifications.UnmessageNotification(
+                title='Authentication started',
+                message='Waiting for {} to advance'.format(self.contact.name))
+            returnValue(notification)
+
+    @inlineCallbacks
+    def untalk(self, input_device=None, output_device=None):
+        if self.is_active:
+            if self.peer._can_talk(self):
+                untalk_session = self.untalk_session or self.init_untalk()
+                if untalk_session.is_talking:
+                    self.stop_untalk()
+                else:
+                    try:
+                        untalk_session.configure(input_device, output_device)
+                    except untalk.AudioDeviceNotFoundError:
+                        self.remove_manager(untalk_session)
+                        raise
+                    else:
+                        yield self._send_element(
+                            UntalkElement(
+                                b2a(untalk_session.handshake_keys.pub)))
+                        if (untalk_session.state ==
+                                untalk.UntalkSession.state_sent):
+                            notification = notifications.UntalkNotification(
+                                message='Voice conversation request sent '
+                                        'to {}'.format(self.contact.name))
+                            returnValue(notification)
+                        else:
+                            # this peer has accepted the request
+                            self.start_untalk()
+            else:
+                raise errors.UntalkError(
+                    message='You can only make one voice conversation at a '
+                            'time')
+        else:
+            # TODO automatically connect and send request
+            raise errors.UntalkError(
+                message='You must be connected to {} in order to start a '
+                        'conversation'.format(self.contact.name))
+
+    @inlineCallbacks
+    def send_file(self, file_path):
+        if self.is_active:
+            file_session = self.file_session or self.init_file()
+            result = yield file_session.send_request(file_path)
+            returnValue(result)
+        else:
+            # TODO automatically connect and send request
+            raise errors.InactiveManagerError(self.contact.name)
+
+    @inlineCallbacks
+    def accept_file(self, checksum, file_path=None):
+        if self.is_active:
+            result = yield self.file_session.accept_request(checksum,
+                                                            file_path)
+            returnValue(result)
+        else:
+            raise errors.InactiveManagerError(self.contact.name)
+
+    def save_file(self, checksum, file_path=None):
+        if self.is_active:
+            self.file_session.save_received_file(checksum, file_path)
+        else:
+            raise errors.InactiveManagerError(self.contact.name)
 
 
 @attr.s
@@ -1433,8 +1420,7 @@ class AuthSession(object):
                         conversation.contact.name)))
         else:
             if next_buffer:
-                yield conversation.peer._send_element(
-                    conversation,
+                yield conversation._send_element(
                     AuthenticationElement(next_buffer))
             if conversation.is_authenticated is None:
                 # the authentication is not complete as buffers are still being
@@ -1590,8 +1576,7 @@ class FileSession(object):
         element, file_transfer = self.prepare_request(file_path)
         self.out_requests[element.checksum] = file_transfer
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             del self.out_requests[element.checksum]
             raise
@@ -1617,8 +1602,7 @@ class FileSession(object):
         del self.out_requests[checksum]
         self.out_files[checksum] = transfer
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             self.out_requests[checksum] = transfer
             raise
@@ -1646,8 +1630,7 @@ class FileSession(object):
         self.in_files[checksum] = transfer
         del self.in_requests[checksum]
         try:
-            yield self.conversation.peer._send_element(self.conversation,
-                                                       element)
+            yield self.conversation._send_element(element)
         except:
             self.in_requests[checksum] = transfer
             del self.in_files[checksum]

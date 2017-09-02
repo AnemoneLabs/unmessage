@@ -111,21 +111,21 @@ def test_prepare_presence(status, peers):
 
 @pytest.inlineCallbacks
 def test_send_message(content, peers, callback_side_effect):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+    _, _, conv_a, conv_b = yield peers
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
 
-    yield peer_a.send_message(conv_a, content)
+    yield conv_a.send_message(content)
     received_message = yield d
     assert str(received_message) == content
 
 
 @pytest.inlineCallbacks
 def test_prepare_message(message_element, content, peers):
-    peer_a, peer_b, _, _ = yield peers
+    _, _, conv_a, _ = yield peers
 
-    element = peer_a._prepare_message(content)
+    element = conv_a._prepare_message(content)
     assert element == message_element
 
 
@@ -137,7 +137,7 @@ SECRETS = {'same': ('secret', 'secret'),
 @pytest.inlineCallbacks
 @pytest.mark.parametrize('secrets', SECRETS.values(), ids=SECRETS.keys())
 def test_authenticate(secrets, peers, callback_side_effect):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+    _, _, conv_a, conv_b = yield peers
 
     d_receive_b = Deferred()
     conv_b.ui.notify_in_authentication = callback_side_effect(d_receive_b)
@@ -147,9 +147,9 @@ def test_authenticate(secrets, peers, callback_side_effect):
     conv_b.ui.notify_finished_authentication = callback_side_effect(d_finish_b)
 
     secret_a, secret_b = secrets
-    yield peer_a.authenticate(conv_a, secret_a)
+    yield conv_a.authenticate(secret_a)
     yield d_receive_b
-    yield peer_b.authenticate(conv_b, secret_b)
+    yield conv_b.authenticate(secret_b)
     yield d_finish_b
     yield d_finish_a
 
@@ -161,11 +161,11 @@ def test_authenticate(secrets, peers, callback_side_effect):
 
 @pytest.inlineCallbacks
 def test_prepare_authentication(peers):
-    peer_a, peer_b, conv_a, _ = yield peers
+    _, _, conv_a, _ = yield peers
 
     secret = 'secret'
     conv_a.init_auth()
-    element, _ = peer_a._prepare_authentication(conv_a, secret)
+    element, _ = conv_a._prepare_authentication(secret)
     assert isinstance(element, elements.AuthenticationElement)
 
 
