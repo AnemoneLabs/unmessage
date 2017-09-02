@@ -823,7 +823,7 @@ def raise_inactive(f):
         if self.is_active:
             return f(self, *args, **kwargs)
         else:
-            raise errors.InactiveManagerError(self.contact.name)
+            raise errors.InactiveConversationError(self.contact.name)
     return wrapped_f
 
 
