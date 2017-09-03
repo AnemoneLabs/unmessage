@@ -694,15 +694,13 @@ class Peer(object):
 
         self._state = Peer.state_stopped
 
-    @inlineCallbacks
     def send_request(self, identity, key):
         try:
             key_bytes = a2b(key)
         except TypeError:
             raise errors.InvalidPublicKeyError()
         else:
-            notification = yield self._send_request(identity, key_bytes)
-            returnValue(notification)
+            return self._send_request(identity, key_bytes)
 
     @inlineCallbacks
     def accept_request(self, identity, new_name=None):
@@ -1321,17 +1319,13 @@ class Conversation(object):
                         'time')
 
     @raise_inactive
-    @inlineCallbacks
     def send_file(self, file_path):
         file_session = self.file_session or self.init_file()
-        result = yield file_session.send_request(file_path)
-        returnValue(result)
+        return file_session.send_request(file_path)
 
     @raise_inactive
-    @inlineCallbacks
     def accept_file(self, checksum, file_path=None):
-        result = yield self.file_session.accept_request(checksum, file_path)
-        returnValue(result)
+        return self.file_session.accept_request(checksum, file_path)
 
     @raise_inactive
     def save_file(self, checksum, file_path=None):
