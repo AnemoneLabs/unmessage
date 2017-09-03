@@ -12,8 +12,8 @@ from .utils import remove_file
 
 @pytest.inlineCallbacks
 def test_send_file(out_content, out_hash, b64_out_hash, out_path, in_path,
-                   peers, callback_side_effect):
-    _, _, conv_a, conv_b = yield peers
+                   conversations, callback_side_effect):
+    conv_a, conv_b = yield conversations
 
     d_req_in = Deferred()
     conv_b.ui.notify_in_file_request = callback_side_effect(d_req_in)
@@ -34,8 +34,8 @@ def test_send_file(out_content, out_hash, b64_out_hash, out_path, in_path,
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_request(out_path, request_element, peers):
-    _, _, conv_a, _ = yield peers
+def test_prepare_file_request(out_path, request_element, conversations):
+    conv_a, _ = yield conversations
 
     manager = conv_a.init_file()
     element, _ = manager.prepare_request(out_path)
@@ -44,8 +44,9 @@ def test_prepare_file_request(out_path, request_element, peers):
 
 
 @pytest.inlineCallbacks
-def test_prepare_file_accept(b64_out_hash, transfer, accept_element, peers):
-    _, _, _, conv_b = yield peers
+def test_prepare_file_accept(b64_out_hash, transfer, accept_element,
+                             conversations):
+    _, conv_b = yield conversations
 
     manager = conv_b.init_file()
     manager.in_requests[b64_out_hash] = transfer
@@ -55,8 +56,8 @@ def test_prepare_file_accept(b64_out_hash, transfer, accept_element, peers):
 
 
 @pytest.inlineCallbacks
-def test_prepare_file(b64_out_hash, transfer, file_element, peers):
-    _, _, conv_a, _ = yield peers
+def test_prepare_file(b64_out_hash, transfer, file_element, conversations):
+    conv_a, _ = yield conversations
 
     manager = conv_a.init_file()
     manager.out_requests[b64_out_hash] = transfer

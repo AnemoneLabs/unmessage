@@ -54,15 +54,15 @@ def test_prepare_accept_request(request_element, peer_a, peer_b, mocker):
 
 
 @pytest.inlineCallbacks
-def test_established_peers(peers):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+def test_established_peers(peers_conversations):
+    peer_a, peer_b, conv_a, conv_b = yield peers_conversations
 
     check_established_conversation(peer_a, peer_b, conv_a, conv_b)
 
 
 @pytest.inlineCallbacks
-def test_send_presence(peers, callback_side_effect):
-    peer_a, peer_b, conv_a, conv_b = yield peers
+def test_send_presence(peers_conversations, callback_side_effect):
+    peer_a, peer_b, conv_a, conv_b = yield peers_conversations
 
     d_offline = Deferred()
     conv_b.ui.notify_offline = callback_side_effect(d_offline)
@@ -94,8 +94,8 @@ PRESENCE_STATUSES = {elements.PresenceElement.status_offline: True,
 @pytest.mark.parametrize('status',
                          PRESENCE_STATUSES.values(),
                          ids=PRESENCE_STATUSES.keys())
-def test_prepare_presence(status, peers):
-    peer_a, peer_b, conv_a, _ = yield peers
+def test_prepare_presence(status, peers_conversations):
+    peer_a, peer_b, conv_a, _ = yield peers_conversations
 
     peer_a.set_presence(peer_b.name, enable=True)
 
@@ -110,8 +110,8 @@ def test_prepare_presence(status, peers):
 
 
 @pytest.inlineCallbacks
-def test_send_message(content, peers, callback_side_effect):
-    _, _, conv_a, conv_b = yield peers
+def test_send_message(content, conversations, callback_side_effect):
+    conv_a, conv_b = yield conversations
 
     d = Deferred()
     conv_b.ui.notify_message = callback_side_effect(d)
@@ -122,8 +122,8 @@ def test_send_message(content, peers, callback_side_effect):
 
 
 @pytest.inlineCallbacks
-def test_prepare_message(message_element, content, peers):
-    _, _, conv_a, _ = yield peers
+def test_prepare_message(message_element, content, conversations):
+    conv_a, _ = yield conversations
 
     element = conv_a._prepare_message(content)
     assert element == message_element
@@ -136,8 +136,8 @@ SECRETS = {'same': ('secret', 'secret'),
 @slow
 @pytest.inlineCallbacks
 @pytest.mark.parametrize('secrets', SECRETS.values(), ids=SECRETS.keys())
-def test_authenticate(secrets, peers, callback_side_effect):
-    _, _, conv_a, conv_b = yield peers
+def test_authenticate(secrets, conversations, callback_side_effect):
+    conv_a, conv_b = yield conversations
 
     d_receive_b = Deferred()
     conv_b.ui.notify_in_authentication = callback_side_effect(d_receive_b)
@@ -160,8 +160,8 @@ def test_authenticate(secrets, peers, callback_side_effect):
 
 
 @pytest.inlineCallbacks
-def test_prepare_authentication(peers):
-    _, _, conv_a, _ = yield peers
+def test_prepare_authentication(conversations):
+    conv_a, _ = yield conversations
 
     secret = 'secret'
     conv_a.init_auth()
