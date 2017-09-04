@@ -32,13 +32,6 @@ class CorruptedPacketError(UnmessageError):
             message='The packet integrity check failed')
 
 
-class CursesScreenResizedError(UnmessageError):
-    def __init__(self):
-        super(CursesScreenResizedError, self).__init__(
-            title='Curses screen resized',
-            message='The curses screen has been resized')
-
-
 class OfflinePeerError(UnmessageError):
     def __init__(self, title, contact, is_request=False):
         message = "{} is offline".format(contact)

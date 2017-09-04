@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 import argparse
 import curses
+import struct
 import sys
+
 from curses.textpad import Textbox
 from functools import wraps
+from fcntl import ioctl
 from signal import signal, SIGWINCH
+from termios import TIOCGWINSZ
 from threading import RLock
 
 from pyaxo import b2a
@@ -836,6 +840,11 @@ class CursesHelper(object):
 
     @classmethod
     @sync_curses
+    def get_term_size(cls):
+        return struct.unpack('hh', ioctl(1, TIOCGWINSZ, ' '*4))
+
+    @classmethod
+    @sync_curses
     def get_size_y(cls):
         return cls.stdscr.getmaxyx()[0]
 
@@ -870,7 +879,7 @@ class CursesHelper(object):
         self.ui = ui
 
         # re-initialize the windows with new sizes and positions on resize
-        signal(SIGWINCH, lambda sig, stack: self.init_windows())
+        signal(SIGWINCH, lambda *args: self.resize_windows())
 
         self.init_windows()
 
@@ -920,6 +929,12 @@ class CursesHelper(object):
 
         self.textpad = _Textbox(self.input_win)
         self.textpad.stripspaces = True
+
+    @sync_curses
+    def resize_windows(self):
+        y, x = CursesHelper.get_term_size()
+        curses.resize_term(y, x)
+        self.init_windows()
 
     @sync_curses
     def update_input_window(self, args_list):
