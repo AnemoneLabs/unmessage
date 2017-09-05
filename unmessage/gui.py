@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import argparse
 import Queue
 import sys
 import Tkinter as Tk
@@ -670,26 +669,7 @@ def get_auth_frame_configs(conversation):
 
 
 def main(name=None):
-    parser = argparse.ArgumentParser(description='''{}'''.format(APP_NAME))
-
-    parser.add_argument('-n', '--name',
-                        default=name)
-    parser.add_argument('-i', '--local-server-ip',
-                        default=peer.HOST)
-    parser.add_argument('-l', '--local-server-port',
-                        default=None,
-                        type=int)
-    parser.add_argument('--connect-to-tor',
-                        action='store_false')
-    parser.add_argument('-s', '--tor-socks-port',
-                        default=peer.TOR_SOCKS_PORT,
-                        type=int)
-    parser.add_argument('-c', '--tor-control-port',
-                        default=peer.TOR_CONTROL_PORT,
-                        type=int)
-    parser.add_argument('-L', '--local-mode',
-                        action='store_true')
-
+    parser = peer.create_arg_parser(name)
     args = parser.parse_args()
 
     from twisted.internet import reactor, tksupport

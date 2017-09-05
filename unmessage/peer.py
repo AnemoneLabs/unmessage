@@ -27,6 +27,7 @@ from . import elements
 from . import errors
 from . import notifications
 from . import packets
+from . import ui
 from . import untalk
 from .contact import Contact
 from .elements import RequestElement, UntalkElement, PresenceElement
@@ -1798,3 +1799,12 @@ def get_manager_class(element):
 
 def keyed_hash(key, data):
     return hmac.new(key, data, sha256).digest()
+
+
+def create_arg_parser(name, add_remote_mode=False):
+    return ui.create_arg_parser(description='''{}'''.format(APP_NAME),
+                                name=name,
+                                local_server_ip=HOST,
+                                tor_socks_port=TOR_SOCKS_PORT,
+                                tor_control_port=TOR_CONTROL_PORT,
+                                add_remote_mode=add_remote_mode)

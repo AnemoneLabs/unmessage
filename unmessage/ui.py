@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 from functools import wraps
 
 from twisted.internet.defer import Deferred
@@ -101,3 +102,32 @@ def displays_result(f, display):
             value = result
         return value
     return wrapped_f
+
+
+def create_arg_parser(description, name, local_server_ip,
+                      tor_socks_port, tor_control_port,
+                      add_remote_mode=False):
+    parser = ArgumentParser(description=description)
+
+    parser.add_argument('-n', '--name',
+                        default=name)
+    parser.add_argument('-i', '--local-server-ip',
+                        default=local_server_ip)
+    parser.add_argument('-l', '--local-server-port',
+                        default=None,
+                        type=int)
+    parser.add_argument('--connect-to-tor',
+                        action='store_false')
+    parser.add_argument('-s', '--tor-socks-port',
+                        default=tor_socks_port,
+                        type=int)
+    parser.add_argument('-c', '--tor-control-port',
+                        default=tor_control_port,
+                        type=int)
+    if add_remote_mode:
+        parser.add_argument('-r', '--remote-mode',
+                            action='store_true')
+    parser.add_argument('-L', '--local-mode',
+                        action='store_true')
+
+    return parser
