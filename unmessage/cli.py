@@ -240,6 +240,9 @@ class Cli(PeerUi):
         window = window or self.curses_helper.output_win
         window.add(args_list, clear)
 
+        # repositon cursor in input window
+        self.curses_helper.input_win.curses_window.refresh()
+
     def clear_window(self, window=None):
         window = window or self.curses_helper.output_win
         window.clear()
