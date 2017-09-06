@@ -26,7 +26,7 @@ def main():
     else:
         ui = UIS[ui_module]
         log.debug('Using the {ui} based on a previous launch',
-                  ui=ui_module)
+                  ui=ui.__name__)
         name = CONFIG.get('unMessage', 'name')
         ui.main(name)
 
