@@ -56,14 +56,7 @@ def displays_result(f):
 
 
 class Gui(Tk.Tk, PeerUi):
-    def __init__(self, reactor,
-                 name,
-                 local_server_ip=None,
-                 local_server_port=None,
-                 launch_tor=True,
-                 tor_socks_port=None,
-                 tor_control_port=None,
-                 local_mode=False):
+    def __init__(self, reactor):
         super(Gui, self).__init__()
 
         self.log = loggerFor(self)
@@ -107,18 +100,6 @@ class Gui(Tk.Tk, PeerUi):
         self.menu_bar.add_command(label='Quit', command=self.stop)
         self.config(menu=self.menu_bar)
 
-        if name:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
-        else:
-            self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
-            self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
-
         self.check_calls()
 
     def check_calls(self):
@@ -130,6 +111,25 @@ class Gui(Tk.Tk, PeerUi):
         except Queue.Empty:
             pass
         self.after(100, self.check_calls)
+
+    def start(self, name,
+              local_server_ip=None,
+              local_server_port=None,
+              launch_tor=True,
+              tor_socks_port=None,
+              tor_control_port=None,
+              local_mode=False):
+        if name:
+            self.init_peer(name,
+                           local_server_ip,
+                           local_server_port,
+                           launch_tor,
+                           tor_socks_port,
+                           tor_control_port,
+                           local_mode)
+        else:
+            self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
+            self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
 
     @inlineCallbacks
     def init_peer(self, name,
@@ -674,8 +674,8 @@ def main(name=None):
 
     from twisted.internet import reactor, tksupport
 
-    gui = Gui(reactor,
-              args.name,
+    gui = Gui(reactor)
+    gui.start(args.name,
               args.local_server_ip,
               args.local_server_port,
               args.connect_to_tor,
