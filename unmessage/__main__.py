@@ -19,12 +19,12 @@ def main():
     log.debug('Launching unMessage from the `unmessage` entry point')
     try:
         ui_module = CONFIG.get('unMessage', 'ui')
-    except ConfigParser.NoSectionError:
-        log.debug('Using the {gui} by default in the first launch',
+        ui = UIS[ui_module]
+    except (ConfigParser.NoSectionError, KeyError):
+        log.debug('Using the {gui} when a valid previous UI is not found',
                   gui=gui.__name__)
         gui.main()
     else:
-        ui = UIS[ui_module]
         log.debug('Using the {ui} based on a previous launch',
                   ui=ui.__name__)
         name = CONFIG.get('unMessage', 'name')
