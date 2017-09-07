@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import Queue
-import sys
 import Tkinter as Tk
 import ttk
 from functools import wraps
@@ -11,7 +10,6 @@ from pyaxo import b2a
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
-from . import peer
 from .log import loggerFor, LogLevel
 from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
@@ -56,14 +54,7 @@ def displays_result(f):
 
 
 class Gui(Tk.Tk, PeerUi):
-    def __init__(self, reactor,
-                 name,
-                 local_server_ip=None,
-                 local_server_port=None,
-                 launch_tor=True,
-                 tor_socks_port=None,
-                 tor_control_port=None,
-                 local_mode=False):
+    def __init__(self, reactor):
         super(Gui, self).__init__()
 
         self.log = loggerFor(self)
@@ -107,18 +98,6 @@ class Gui(Tk.Tk, PeerUi):
         self.menu_bar.add_command(label='Quit', command=self.stop)
         self.config(menu=self.menu_bar)
 
-        if name:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
-        else:
-            self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
-            self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
-
         self.check_calls()
 
     def check_calls(self):
@@ -130,6 +109,26 @@ class Gui(Tk.Tk, PeerUi):
         except Queue.Empty:
             pass
         self.after(100, self.check_calls)
+
+    def start(self, name,
+              local_server_ip=None,
+              local_server_port=None,
+              launch_tor=True,
+              tor_socks_port=None,
+              tor_control_port=None,
+              local_mode=False,
+              remote_mode=False):
+        if name:
+            self.init_peer(name,
+                           local_server_ip,
+                           local_server_port,
+                           launch_tor,
+                           tor_socks_port,
+                           tor_control_port,
+                           local_mode)
+        else:
+            self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
+            self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
 
     @inlineCallbacks
     def init_peer(self, name,
@@ -666,25 +665,3 @@ def get_auth_frame_configs(conversation):
         return 'Verified', COLOR_GREEN
     else:
         return 'Unverified', COLOR_RED
-
-
-def main(name=None):
-    parser = peer.create_arg_parser(name)
-    args = parser.parse_args()
-
-    from twisted.internet import reactor, tksupport
-
-    gui = Gui(reactor,
-              args.name,
-              args.local_server_ip,
-              args.local_server_port,
-              args.connect_to_tor,
-              args.tor_socks_port,
-              args.tor_control_port,
-              args.local_mode)
-    tksupport.install(gui)
-    reactor.run()
-
-
-if __name__ == '__main__':
-    sys.exit(main())

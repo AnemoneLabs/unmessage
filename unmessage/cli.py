@@ -14,7 +14,6 @@ from pyaxo import b2a
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
-from . import peer
 from .log import loggerFor, LogLevel
 from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
@@ -253,8 +252,8 @@ class Cli(PeerUi):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              remote_mode=False,
-              local_mode=False):
+              local_mode=False,
+              remote_mode=False):
         self.help_info = create_help()
         self.remote_mode = remote_mode
 
@@ -1009,25 +1008,3 @@ class _Textbox(Textbox, object):
             return 8
 
         return Textbox.do_command(self, ch)
-
-
-def main(name=None):
-    parser = peer.create_arg_parser(name, add_remote_mode=True)
-    args = parser.parse_args()
-
-    from twisted.internet import reactor
-
-    cli = Cli(reactor)
-    cli.start(args.name,
-              args.local_server_ip,
-              args.local_server_port,
-              args.connect_to_tor,
-              args.tor_socks_port,
-              args.tor_control_port,
-              args.remote_mode,
-              args.local_mode)
-    reactor.run()
-
-
-if __name__ == '__main__':
-    sys.exit(main())

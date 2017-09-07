@@ -285,7 +285,7 @@ class Peer(object):
     def _update_config(self):
         if not CONFIG.has_section('unMessage'):
             CONFIG.add_section('unMessage')
-        CONFIG.set('unMessage', 'ui', self._ui.__module__)
+        CONFIG.set('unMessage', 'ui', type(self._ui).__name__)
         CONFIG.set('unMessage', 'name', self.name)
 
         with open(CONFIG_FILE, 'w') as f:
