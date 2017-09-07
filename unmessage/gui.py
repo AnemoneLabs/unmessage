@@ -118,7 +118,8 @@ class Gui(Tk.Tk, PeerUi):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              local_mode=False):
+              local_mode=False,
+              remote_mode=False):
         if name:
             self.init_peer(name,
                            local_server_ip,

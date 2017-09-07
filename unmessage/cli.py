@@ -253,8 +253,8 @@ class Cli(PeerUi):
               launch_tor=True,
               tor_socks_port=None,
               tor_control_port=None,
-              remote_mode=False,
-              local_mode=False):
+              local_mode=False,
+              remote_mode=False):
         self.help_info = create_help()
         self.remote_mode = remote_mode
 
@@ -1024,8 +1024,8 @@ def main(name=None):
               args.connect_to_tor,
               args.tor_socks_port,
               args.tor_control_port,
-              args.remote_mode,
-              args.local_mode)
+              args.local_mode,
+              args.remote_mode)
     reactor.run()
 
 
