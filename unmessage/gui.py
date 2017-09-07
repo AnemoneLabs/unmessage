@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import Queue
-import sys
 import Tkinter as Tk
 import ttk
 from functools import wraps
@@ -11,7 +10,6 @@ from pyaxo import b2a
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from . import errors
-from . import peer
 from .log import loggerFor, LogLevel
 from .notifications import UnmessageNotification
 from .peer import APP_NAME, Peer
@@ -667,25 +665,3 @@ def get_auth_frame_configs(conversation):
         return 'Verified', COLOR_GREEN
     else:
         return 'Unverified', COLOR_RED
-
-
-def main(name=None):
-    parser = peer.create_arg_parser(name)
-    args = parser.parse_args()
-
-    from twisted.internet import reactor, tksupport
-
-    gui = Gui(reactor)
-    gui.start(args.name,
-              args.local_server_ip,
-              args.local_server_port,
-              args.connect_to_tor,
-              args.tor_socks_port,
-              args.tor_control_port,
-              args.local_mode)
-    tksupport.install(gui)
-    reactor.run()
-
-
-if __name__ == '__main__':
-    sys.exit(main())

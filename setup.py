@@ -43,10 +43,10 @@ setup(
     entry_points={
         'console_scripts': [
             'unmessage = unmessage.__main__:main',
-            'unmessage-cli = unmessage.__main__:cli.main',
+            'unmessage-cli = unmessage.__main__:launch_cli',
         ],
         'gui_scripts': [
-            'unmessage-gui = unmessage.__main__:gui.main',
+            'unmessage-gui = unmessage.__main__:launch_gui',
         ],
     },
 )
