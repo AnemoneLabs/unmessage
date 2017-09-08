@@ -110,6 +110,7 @@ class Gui(Tk.Tk, PeerUi):
             pass
         self.after(100, self.check_calls)
 
+    @inlineCallbacks
     def start(self, name,
               local_server_ip=None,
               local_server_port=None,
@@ -119,13 +120,13 @@ class Gui(Tk.Tk, PeerUi):
               local_mode=False,
               remote_mode=False):
         if name:
-            self.init_peer(name,
-                           local_server_ip,
-                           local_server_port,
-                           launch_tor,
-                           tor_socks_port,
-                           tor_control_port,
-                           local_mode)
+            yield self.init_peer(name,
+                                 local_server_ip,
+                                 local_server_port,
+                                 launch_tor,
+                                 tor_socks_port,
+                                 tor_control_port,
+                                 local_mode)
         else:
             self.tab_new = PeerCreationTab(parent=self.notebook, gui=self)
             self.notebook.add(self.tab_new, text='Start Peer', sticky=Tk.NS)
