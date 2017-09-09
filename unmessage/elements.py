@@ -23,7 +23,7 @@ def raise_incomplete(f):
 class PartialElement(dict):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
     id_ = attr.ib(validator=attr.validators.instance_of(str))
-    part_len = attr.ib(validator=attr.validators.instance_of(int))
+    part_total = attr.ib(validator=attr.validators.instance_of(int))
     sender = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(str)),
         default=None)
@@ -48,7 +48,7 @@ class PartialElement(dict):
 
     @classmethod
     def from_packet(cls, packet, sender=None, receiver=None):
-        partial = cls(packet.type_, packet.id_, packet.part_len,
+        partial = cls(packet.type_, packet.id_, packet.part_total,
                       sender, receiver)
         partial[packet.part_num] = packet.payload
         return partial
@@ -59,7 +59,7 @@ class PartialElement(dict):
 
     @property
     def is_complete(self):
-        return len(self) == self.part_len
+        return len(self) == self.part_total
 
     @raise_incomplete
     def to_packets(self):
@@ -68,7 +68,7 @@ class PartialElement(dict):
             packets.append(ElementPacket(self.type_,
                                          self.id_,
                                          part_num,
-                                         self.part_len,
+                                         self.part_total,
                                          part))
         return packets
 

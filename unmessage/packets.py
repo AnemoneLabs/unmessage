@@ -128,7 +128,7 @@ class ElementPacket(Packet):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
     id_ = attr.ib(validator=attr.validators.instance_of(str))
     part_num = attr.ib(convert=int)
-    part_len = attr.ib(convert=int)
+    part_total = attr.ib(convert=int)
     payload = attr.ib(validator=attr.validators.instance_of(str))
 
     @classmethod
@@ -138,5 +138,5 @@ class ElementPacket(Packet):
         return cls(type_=lines[0],
                    id_=lines[1],
                    part_num=lines[2],
-                   part_len=lines[3],
+                   part_total=lines[3],
                    payload=LINESEP.join(lines[4:]))

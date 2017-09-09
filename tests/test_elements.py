@@ -50,12 +50,12 @@ def test_partial_to_packets(element, id_, packet):
 
 def test_partial_from_packet(element, packet):
     partial = PartialElement.from_packet(packet)
-    assert len(partial) == packet.part_len
+    assert len(partial) == packet.part_total
     assert partial.to_element() == element
 
 
 def test_incomplete_partial_from_packet(packet):
-    packet.part_len = 2
+    packet.part_total = 2
     partial = PartialElement.from_packet(packet)
     with pytest.raises(errors.IncompleteElementError):
         str(partial)
@@ -108,4 +108,4 @@ def id_():
 @pytest.fixture
 def packet(element, id_):
     return ElementPacket(element.type_, id_,
-                         part_num=0, part_len=1, payload=element.serialize())
+                         part_num=0, part_total=1, payload=element.serialize())
