@@ -258,9 +258,9 @@ class Cli(PeerUi):
         self.remote_mode = remote_mode
 
         if not name:
-            print 'unMessage could not find a name to use'
-            print 'Run unMessage with `-name`'
-            return
+            raise errors.UnmessageError(
+                title='Peer name not found',
+                message='Provide a name with the `-name` option')
 
         self.curses_helper = CursesHelper(ui=self)
 
