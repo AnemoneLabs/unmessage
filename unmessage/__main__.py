@@ -3,6 +3,7 @@ import ConfigParser
 import sys
 
 from .cli import Cli
+from .errors import to_unmessage_error
 from .gui import Gui
 from .log import Logger
 from .peer import CONFIG, create_arg_parser
@@ -44,14 +45,20 @@ def launch(create_ui, name=None, add_remote_mode=False):
 
     log.debug('Launching the {ui} ', ui=type(ui).__name__)
 
-    ui.start(args.name,
-             args.local_server_ip,
-             args.local_server_port,
-             args.connect_to_tor,
-             args.tor_socks_port,
-             args.tor_control_port,
-             args.local_mode,
-             args.remote_mode if add_remote_mode else False)
+    def errback(failure):
+        e = to_unmessage_error(failure)
+        print '{}: {}'.format(e.title, e.message)
+        reactor.stop()
+
+    d = ui.start(args.name,
+                 args.local_server_ip,
+                 args.local_server_port,
+                 args.connect_to_tor,
+                 args.tor_socks_port,
+                 args.tor_control_port,
+                 args.local_mode,
+                 args.remote_mode if add_remote_mode else False)
+    reactor.callLater(0, lambda: d.addErrback(errback))
     reactor.run()
 
 
