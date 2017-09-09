@@ -51,7 +51,7 @@ CONFIG_FILE = os.path.join(APP_DIR, '{}.cfg'.format(APP_NAME))
 CONFIG = ConfigParser.ConfigParser()
 CONFIG.read(CONFIG_FILE)
 
-DATA_LENGTH = 1024
+MAX_PACKET_LEN = 100000
 TIMEOUT = 30
 
 HOST = '127.0.0.1'
@@ -1710,6 +1710,8 @@ class _ConversationFactory(Factory, object):
 
 @attr.s
 class _ConversationProtocol(NetstringReceiver, object):
+    MAX_LENGTH = MAX_PACKET_LEN
+
     type_regular = 'reg'
     type_untalk = untalk.UntalkSession.type_
     type_file = FileSession.type_
