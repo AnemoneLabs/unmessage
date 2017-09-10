@@ -32,18 +32,20 @@ class PartialElement(dict):
         default=None)
 
     @classmethod
-    def from_element(cls, element, id_=None, max_len=None):
+    def from_element(cls, element, id_=None, max_len=0):
+        serialized_element = element.serialize()
         id_ = id_ or get_random_id()
-        parts = list()
-        if max_len is None:
-            parts.append(element.serialize())
-        else:
-            # TODO split the element (#59)
-            raise Exception('Not implemented')
-        partial = cls(element.type_, id_, len(parts),
+        max_len = max_len / 4 * 3 if max_len else len(serialized_element)
+
+        part_num = 0
+        partial = cls(element.type_, id_, part_num,
                       element.sender, element.receiver)
-        for part_num, part in enumerate(parts):
-            partial[part_num] = parts[part_num]
+        while len(serialized_element):
+            partial[part_num] = serialized_element[:max_len]
+            serialized_element = serialized_element[max_len:]
+            part_num += 1
+        partial.part_total = part_num
+
         return partial
 
     @classmethod

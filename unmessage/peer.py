@@ -52,6 +52,8 @@ CONFIG = ConfigParser.ConfigParser()
 CONFIG.read(CONFIG_FILE)
 
 MAX_PACKET_LEN = 100000
+PACKET_OVERHEAD = 1000
+MAX_ELEMENT_LEN = MAX_PACKET_LEN - PACKET_OVERHEAD
 TIMEOUT = 30
 
 HOST = '127.0.0.1'
@@ -951,7 +953,8 @@ class Conversation(object):
         element.sender = self.peer.name
         element.receiver = self.contact.name
 
-        partial = elements.PartialElement.from_element(element)
+        partial = elements.PartialElement.from_element(element,
+                                                       max_len=MAX_ELEMENT_LEN)
 
         manager = yield self._get_active_manager(element)
 
