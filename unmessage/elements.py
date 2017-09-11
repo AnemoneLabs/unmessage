@@ -23,7 +23,7 @@ def raise_incomplete(f):
 class PartialElement(dict):
     type_ = attr.ib(validator=attr.validators.instance_of(str))
     id_ = attr.ib(validator=attr.validators.instance_of(str))
-    part_len = attr.ib(validator=attr.validators.instance_of(int))
+    part_total = attr.ib(validator=attr.validators.instance_of(int))
     sender = attr.ib(
         validator=attr.validators.optional(attr.validators.instance_of(str)),
         default=None)
@@ -32,25 +32,27 @@ class PartialElement(dict):
         default=None)
 
     @classmethod
-    def from_element(cls, element, id_=None, max_len=None):
+    def from_element(cls, element, id_=None, max_len=0):
+        serialized_element = element.serialize()
         id_ = id_ or get_random_id()
-        parts = list()
-        if max_len is None:
-            parts.append(element.serialize())
-        else:
-            # TODO split the element (#59)
-            raise Exception('Not implemented')
-        partial = cls(element.type_, id_, len(parts),
+        max_len = max_len / 4 * 3 if max_len else len(serialized_element)
+
+        part_num = 0
+        partial = cls(element.type_, id_, part_num,
                       element.sender, element.receiver)
-        for part_num, part in enumerate(parts):
-            partial[part_num] = parts[part_num]
+        while len(serialized_element):
+            partial.add_part(part_num, serialized_element[:max_len])
+            serialized_element = serialized_element[max_len:]
+            part_num += 1
+        partial.part_total = part_num
+
         return partial
 
     @classmethod
     def from_packet(cls, packet, sender=None, receiver=None):
-        partial = cls(packet.type_, packet.id_, packet.part_len,
+        partial = cls(packet.type_, packet.id_, packet.part_total,
                       sender, receiver)
-        partial[packet.part_num] = packet.payload
+        partial.add_packet(packet)
         return partial
 
     @raise_incomplete
@@ -59,7 +61,13 @@ class PartialElement(dict):
 
     @property
     def is_complete(self):
-        return len(self) == self.part_len
+        return len(self) == self.part_total
+
+    def add_packet(self, packet):
+        self.add_part(packet.part_num, packet.payload)
+
+    def add_part(self, part_num, part):
+        self[part_num] = part
 
     @raise_incomplete
     def to_packets(self):
@@ -68,7 +76,7 @@ class PartialElement(dict):
             packets.append(ElementPacket(self.type_,
                                          self.id_,
                                          part_num,
-                                         self.part_len,
+                                         self.part_total,
                                          part))
         return packets
 

@@ -51,7 +51,9 @@ CONFIG_FILE = os.path.join(APP_DIR, '{}.cfg'.format(APP_NAME))
 CONFIG = ConfigParser.ConfigParser()
 CONFIG.read(CONFIG_FILE)
 
-DATA_LENGTH = 1024
+MAX_PACKET_LEN = 100000
+PACKET_OVERHEAD = 1000
+MAX_ELEMENT_LEN = MAX_PACKET_LEN - PACKET_OVERHEAD
 TIMEOUT = 30
 
 HOST = '127.0.0.1'
@@ -951,7 +953,8 @@ class Conversation(object):
         element.sender = self.peer.name
         element.receiver = self.contact.name
 
-        partial = elements.PartialElement.from_element(element)
+        partial = elements.PartialElement.from_element(element,
+                                                       max_len=MAX_ELEMENT_LEN)
 
         manager = yield self._get_active_manager(element)
 
@@ -1055,7 +1058,7 @@ class Conversation(object):
                                                               receiver)
             else:
                 # add the part from the packet
-                element[packet.part_num] = packet.payload
+                element.add_packet(packet)
 
             if element.is_complete:
                 # the ``PartialElement`` does not have to be stored as either
@@ -1710,6 +1713,8 @@ class _ConversationFactory(Factory, object):
 
 @attr.s
 class _ConversationProtocol(NetstringReceiver, object):
+    MAX_LENGTH = MAX_PACKET_LEN
+
     type_regular = 'reg'
     type_untalk = untalk.UntalkSession.type_
     type_file = FileSession.type_

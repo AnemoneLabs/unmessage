@@ -4,7 +4,7 @@ import pytest
 from twisted.internet.defer import Deferred
 
 from unmessage import elements
-from unmessage.peer import b2a, FileTransfer
+from unmessage.peer import b2a, FileTransfer, MAX_ELEMENT_LEN
 from pyaxo import hash_
 
 from .utils import remove_file
@@ -65,10 +65,13 @@ def test_prepare_file(b64_out_hash, transfer, file_element, conversations):
 
     assert element == file_element
 
+CONTENTS = {'short': lambda c: c,
+            'long': lambda c: MAX_ELEMENT_LEN * 2 / len(c) * c}
 
-@pytest.fixture
-def out_content(content):
-    return content
+
+@pytest.fixture(params=CONTENTS.values(), ids=CONTENTS.keys())
+def out_content(request, content):
+    return request.param(content)
 
 
 @pytest.fixture
