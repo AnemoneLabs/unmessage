@@ -76,7 +76,8 @@ def test_partial_from_packets(element, id_, packets):
         if partial is None:
             partial = PartialElement.from_packet(packet)
         else:
-            partial[packet.part_num] = packet.payload
+            partial.add_packet(packet)
+        assert partial[packet.part_num] == packet.payload
     assert partial.to_element() == element
 
 

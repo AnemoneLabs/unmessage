@@ -1058,7 +1058,7 @@ class Conversation(object):
                                                               receiver)
             else:
                 # add the part from the packet
-                element[packet.part_num] = packet.payload
+                element.add_packet(packet)
 
             if element.is_complete:
                 # the ``PartialElement`` does not have to be stored as either

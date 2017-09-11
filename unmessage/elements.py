@@ -41,7 +41,7 @@ class PartialElement(dict):
         partial = cls(element.type_, id_, part_num,
                       element.sender, element.receiver)
         while len(serialized_element):
-            partial[part_num] = serialized_element[:max_len]
+            partial.add_part(part_num, serialized_element[:max_len])
             serialized_element = serialized_element[max_len:]
             part_num += 1
         partial.part_total = part_num
@@ -52,7 +52,7 @@ class PartialElement(dict):
     def from_packet(cls, packet, sender=None, receiver=None):
         partial = cls(packet.type_, packet.id_, packet.part_total,
                       sender, receiver)
-        partial[packet.part_num] = packet.payload
+        partial.add_packet(packet)
         return partial
 
     @raise_incomplete
@@ -62,6 +62,12 @@ class PartialElement(dict):
     @property
     def is_complete(self):
         return len(self) == self.part_total
+
+    def add_packet(self, packet):
+        self.add_part(packet.part_num, packet.payload)
+
+    def add_part(self, part_num, part):
+        self[part_num] = part
 
     @raise_incomplete
     def to_packets(self):
