@@ -107,11 +107,6 @@ the file instead of using the default one::
 Once the initiator receives the confirmation, the file transfer is
 finally initialized and both parties are notified when it is complete.
 
-.. note::
-
-    unMessage currently only supports transmitting files smaller than
-    **50KB**, but will support bigger files in future versions.
-
 Notifying Presence
 ''''''''''''''''''
 If you wish to notify the peer whenever you go online or offline,
