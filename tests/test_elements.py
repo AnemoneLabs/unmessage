@@ -131,12 +131,6 @@ def id_():
     return get_random_id()
 
 
-@pytest.fixture
-def packet(element, id_):
-    return ElementPacket(element.type_, id_,
-                         part_num=0, part_total=1, payload=element.serialize())
-
-
 MAX_ELEMENT_LENS = [0, 4, 10, MAX_ELEMENT_LEN]
 
 
