@@ -106,13 +106,13 @@ def serialized_payload(content):
 
 
 @pytest.fixture
-def file_size():
-    return 1
+def file_size(content):
+    return len(content)
 
 
 @pytest.fixture
-def file_checksum():
-    return b2a(hash_(''))
+def file_checksum(content):
+    return b2a(hash_(content))
 
 
 @pytest.fixture
