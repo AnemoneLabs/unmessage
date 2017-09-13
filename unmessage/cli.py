@@ -759,7 +759,7 @@ class _ConversationHandler(ConversationUi):
     def notify_in_file_request(self, notification):
         cmd = '/file-accept'
         self.cli.display_info(
-            '{} - accept using "{} {} {} [<taget_path>]"'.format(
+            '{} - accept using "{} {} {} [<target_path>]"'.format(
                 notification.message,
                 cmd,
                 self.conversation.contact.name,
