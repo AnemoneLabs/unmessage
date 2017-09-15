@@ -845,8 +845,6 @@ class Conversation(object):
 
     _paths = attr.ib(init=False)
 
-    axolotl_lock = attr.ib(init=False, default=attr.Factory(Lock))
-
     ui = attr.ib(init=False, default=attr.Factory(ConversationUi))
 
     auth_session = attr.ib(init=False, default=None)
@@ -1084,10 +1082,9 @@ class Conversation(object):
             keys = self.keys
             handshake_key = ''
 
-        with self.axolotl_lock:
-            ciphertext = self.axolotl.encrypt(plaintext)
-            if self.has_persistence:
-                self.axolotl.save()
+        ciphertext = self.axolotl.encrypt(plaintext)
+        if self.has_persistence:
+            self.axolotl.save()
 
         if handshake_key:
             packet_type = packets.ReplyPacket
@@ -1109,10 +1106,9 @@ class Conversation(object):
                                   a2b(packet.handshake_key) + ciphertext)
 
         if payload_hash == a2b(packet.payload_hash):
-            with self.axolotl_lock:
-                plaintext = self.axolotl.decrypt(ciphertext)
-                if self.has_persistence:
-                    self.axolotl.save()
+            plaintext = self.axolotl.decrypt(ciphertext)
+            if self.has_persistence:
+                self.axolotl.save()
             return packets.ElementPacket.build(plaintext)
         else:
             raise errors.CorruptedPacketError()
